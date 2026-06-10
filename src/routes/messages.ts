@@ -256,7 +256,7 @@ messagesRouter.get("/", async (c) => {
 
   const result = await c.env.DB.prepare(
     `
-      SELECT id, folder_id, subject, from_email, to_email, received_at, is_read
+      SELECT id, folder_id, subject, from_email, to_email, snippet, text_body, html_body, received_at, is_read
       FROM messages
       WHERE deleted_at IS NULL
         AND mailbox_id IN (

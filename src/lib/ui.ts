@@ -593,7 +593,7 @@ export function renderInboxPage() {
       }
 
       .thread-sender {
-        font-weight: 700;
+        font-weight: 600;
         color: var(--text);
       }
 
@@ -605,7 +605,6 @@ export function renderInboxPage() {
       .thread-subject {
         margin: 0 0 2px;
         font-size: 13px;
-        font-weight: 600;
         color: var(--text);
         white-space: nowrap;
         overflow: hidden;
@@ -1035,6 +1034,54 @@ export function renderInboxPage() {
         margin-top: 10px;
       }
 
+      #mailbox-summary {
+        max-height: 100px;
+        overflow-y: auto;
+      }
+
+      .mailbox-checklist {
+        display: grid;
+        gap: 8px;
+        max-height: 160px;
+        overflow-y: auto;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: var(--panel-soft);
+        border: 1px solid var(--line);
+      }
+
+      .mailbox-checklist-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      .mailbox-checklist-item input[type="checkbox"] {
+        cursor: pointer;
+      }
+
+      .mailbox-select-actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 8px;
+      }
+
+      .mailbox-select-actions .text-button {
+        font-size: 12px;
+        color: var(--primary);
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+      }
+
+      .mailbox-select-actions .text-button:hover {
+        text-decoration: underline;
+      }
+
       .permission-actions {
         display: flex;
         flex-wrap: wrap;
@@ -1215,8 +1262,12 @@ export function renderInboxPage() {
               <h3>Permission Assignment</h3>
               <p>Choose a mailbox and assign read, reply, or manage rights for each employee.</p>
               <div class="field" style="margin-bottom:12px;">
-                <label for="admin-mailbox-select">Mailbox</label>
-                <select id="admin-mailbox-select"></select>
+                <label>Mailbox</label>
+                <div id="admin-mailbox-list" class="mailbox-checklist"></div>
+                <div class="mailbox-select-actions">
+                  <button class="text-button" id="select-all-mailboxes" type="button">Select all</button>
+                  <button class="text-button" id="clear-all-mailboxes" type="button">Clear</button>
+                </div>
               </div>
               <div id="admin-user-list"></div>
               <div class="modal-footer-actions">
@@ -1267,7 +1318,7 @@ export function renderInboxPage() {
         selectedFolderId: ${JSON.stringify(findDefaultFolderId([
           { id: "fld_inbox", name: "Inbox", kind: "system" },
         ]))},
-        selectedAdminMailboxId: null,
+        selectedAdminMailboxIds: [],
       };
 
       const els = {
@@ -1305,7 +1356,9 @@ export function renderInboxPage() {
         employeesSection: document.getElementById("employees-section"),
         cloudflareSyncSection: document.getElementById("cloudflare-sync-section"),
         toastRegion: document.getElementById("toast-region"),
-        adminMailboxSelect: document.getElementById("admin-mailbox-select"),
+        adminMailboxList: document.getElementById("admin-mailbox-list"),
+        selectAllMailboxes: document.getElementById("select-all-mailboxes"),
+        clearAllMailboxes: document.getElementById("clear-all-mailboxes"),
         adminUserList: document.getElementById("admin-user-list"),
         savePermissionsButton: document.getElementById("save-permissions-button"),
         adminStatus: document.getElementById("admin-status"),
@@ -1617,8 +1670,8 @@ export function renderInboxPage() {
           state.selectedFolderId = ${findDefaultFolderId.toString()}(foldersInView);
         }
 
-        if (!state.selectedAdminMailboxId && state.mailboxes[0]) {
-          state.selectedAdminMailboxId = state.mailboxes[0].id;
+        if (!state.selectedAdminMailboxIds.length && state.mailboxes[0]) {
+          state.selectedAdminMailboxIds = [state.mailboxes[0].id];
         }
 
         if (state.user && state.user.role === "admin") {
@@ -1752,21 +1805,37 @@ export function renderInboxPage() {
         }
 
         els.permissionsSection.style.display = "block";
-        els.adminMailboxSelect.innerHTML = state.mailboxes.map((mailbox) => {
-          const selected = mailbox.id === state.selectedAdminMailboxId ? " selected" : "";
-          return '<option value="' + escapeHtml(mailbox.id) + '"' + selected + '>' + escapeHtml(mailbox.full_address) + '</option>';
+        const selectedSet = new Set(state.selectedAdminMailboxIds);
+
+        els.adminMailboxList.innerHTML = state.mailboxes.map((mailbox) => {
+          const checked = selectedSet.has(mailbox.id) ? " checked" : "";
+          return '' +
+            '<label class="mailbox-checklist-item">' +
+              '<input type="checkbox" data-mailbox-id="' + escapeHtml(mailbox.id) + '"' + checked + '>' +
+              escapeHtml(mailbox.full_address) +
+            '</label>';
         }).join("");
 
-        const permissionMap = new Map(
-          (state.mailboxPermissions || []).map((entry) => [entry.userId, new Set(entry.permissions)]),
-        );
+        const selectedCount = state.selectedAdminMailboxIds.length;
+        if (!selectedCount) {
+          els.adminUserList.innerHTML = '<div class="permission-card"><strong>Select at least one mailbox to assign permissions.</strong></div>';
+          return;
+        }
 
         if (!state.users.length) {
           els.adminUserList.innerHTML = '<div class="permission-card"><strong>No employees found.</strong></div>';
           return;
         }
 
-        els.adminUserList.innerHTML = state.users.map((user) => {
+        const permissionMap = new Map(
+          (state.mailboxPermissions || []).map((entry) => [entry.userId, new Set(entry.permissions)]),
+        );
+
+        const multiHint = selectedCount > 1
+          ? '<div class="permission-card" style="font-size:12px;color:var(--primary);margin-bottom:10px;"><strong>Batch mode:</strong> Permissions will be applied to ' + selectedCount + ' selected mailboxes.</div>'
+          : '';
+
+        els.adminUserList.innerHTML = multiHint + state.users.map((user) => {
           const granted = permissionMap.get(user.id) || new Set();
           return '' +
             '<div class="permission-card">' +
@@ -1810,12 +1879,18 @@ export function renderInboxPage() {
       }
 
       async function loadAdminAssignments() {
-        if (!state.user || state.user.role !== "admin" || !state.selectedAdminMailboxId) {
+        if (!state.user || state.user.role !== "admin" || !state.selectedAdminMailboxIds.length) {
+          state.mailboxPermissions = [];
           return;
         }
 
-        const data = await api("/api/mailboxes/" + encodeURIComponent(state.selectedAdminMailboxId) + "/permissions");
-        state.mailboxPermissions = data.items;
+        if (state.selectedAdminMailboxIds.length === 1) {
+          const data = await api("/api/mailboxes/" + encodeURIComponent(state.selectedAdminMailboxIds[0]) + "/permissions");
+          state.mailboxPermissions = data.items;
+          return;
+        }
+
+        state.mailboxPermissions = [];
       }
 
       function renderMessages() {
@@ -2111,8 +2186,20 @@ export function renderInboxPage() {
         }
       });
 
-      els.adminMailboxSelect.addEventListener("change", async () => {
-        state.selectedAdminMailboxId = els.adminMailboxSelect.value;
+      els.adminMailboxList.addEventListener("change", async (event) => {
+        const checkbox = event.target.closest('input[type="checkbox"][data-mailbox-id]');
+        if (!checkbox) return;
+
+        const mailboxId = checkbox.getAttribute("data-mailbox-id");
+        const checked = checkbox.checked;
+        const set = new Set(state.selectedAdminMailboxIds);
+        if (checked) {
+          set.add(mailboxId);
+        } else {
+          set.delete(mailboxId);
+        }
+        state.selectedAdminMailboxIds = Array.from(set);
+
         try {
           await loadAdminAssignments();
           renderPermissionsPanel();
@@ -2121,8 +2208,23 @@ export function renderInboxPage() {
         }
       });
 
+      els.selectAllMailboxes.addEventListener("click", () => {
+        state.selectedAdminMailboxIds = state.mailboxes.map((m) => m.id);
+        loadAdminAssignments().then(() => {
+          renderPermissionsPanel();
+        }).catch((error) => {
+          setStatus(els.adminStatus, error.message, "error");
+        });
+      });
+
+      els.clearAllMailboxes.addEventListener("click", () => {
+        state.selectedAdminMailboxIds = [];
+        state.mailboxPermissions = [];
+        renderPermissionsPanel();
+      });
+
       els.savePermissionsButton.addEventListener("click", async () => {
-        if (!state.selectedAdminMailboxId) return;
+        if (!state.selectedAdminMailboxIds.length) return;
 
         const assignments = state.users.map((user) => {
           const permissions = Array.from(
@@ -2134,14 +2236,20 @@ export function renderInboxPage() {
         try {
           setStatus(els.adminStatus, "Saving...");
           setButtonLoading(els.savePermissionsButton, true, "Saving...");
-          await api("/api/mailboxes/" + encodeURIComponent(state.selectedAdminMailboxId) + "/permissions", {
-            method: "PUT",
-            body: JSON.stringify({ assignments }),
-          });
+
+          for (const mailboxId of state.selectedAdminMailboxIds) {
+            await api("/api/mailboxes/" + encodeURIComponent(mailboxId) + "/permissions", {
+              method: "PUT",
+              body: JSON.stringify({ assignments }),
+            });
+          }
+
           await loadAdminAssignments();
           renderPermissionsPanel();
-          setStatus(els.adminStatus, "Access updated.", "success");
-          showToast("Access updated.", "success");
+          const count = state.selectedAdminMailboxIds.length;
+          const msg = count === 1 ? "Access updated." : "Access updated for " + count + " mailboxes.";
+          setStatus(els.adminStatus, msg, "success");
+          showToast(msg, "success");
         } catch (error) {
           setStatus(els.adminStatus, error.message, "error");
           showToast(error.message, "error");
