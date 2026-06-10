@@ -254,6 +254,11 @@ export function renderInboxPage() {
         box-shadow: var(--shadow);
       }
 
+      .shell > * {
+        min-width: 0;
+        min-height: 0;
+      }
+
       .sidebar,
       .conversation-pane,
       .message-pane {
@@ -437,6 +442,8 @@ export function renderInboxPage() {
       .conversation-pane,
       .message-pane {
         background: var(--surface);
+        min-width: 0;
+        min-height: 0;
       }
 
       .conversation-pane {
@@ -693,7 +700,8 @@ export function renderInboxPage() {
       }
 
       .detail-view {
-        overflow: auto;
+        overflow-y: auto;
+        overflow-x: hidden;
         min-height: 0;
         padding: 12px 14px 18px;
         background: #f8fafc;
@@ -816,10 +824,12 @@ export function renderInboxPage() {
 
       .message-content {
         margin-top: 12px;
+        padding-right: 6px;
         font-size: 13px;
         line-height: 1.65;
         color: var(--text);
         white-space: pre-wrap;
+        word-break: break-word;
       }
 
       .message-content-html {
@@ -833,7 +843,9 @@ export function renderInboxPage() {
       }
 
       .message-content-html table {
+        display: block;
         max-width: 100%;
+        overflow-x: auto;
         border-collapse: collapse;
       }
 
