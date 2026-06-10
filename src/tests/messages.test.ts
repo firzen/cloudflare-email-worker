@@ -166,10 +166,11 @@ describe("messages api", () => {
       is_read: 0,
     };
     const first = vi.fn(async () => row);
-    const bind = vi.fn(() => ({ first }));
-    let preparedSql = "";
+    const all = vi.fn(async () => ({ results: [] }));
+    const bind = vi.fn(() => ({ first, all }));
+    const preparedSqls: string[] = [];
     const prepare = vi.fn((sql: string) => {
-      preparedSql = sql;
+      preparedSqls.push(sql);
       return { bind };
     });
     const cookie = await createSessionCookie("usr_1", "secret");
@@ -193,15 +194,18 @@ describe("messages api", () => {
         htmlBody: "<p>Plain text body</p>",
         receivedAt: "2026-06-06T10:00:00.000Z",
         isRead: false,
+        attachments: [],
       },
     });
-    expect(preparedSql).toContain("SELECT");
-    expect(preparedSql).toContain("mailbox_id");
-    expect(preparedSql).toContain("folder_id");
-    expect(preparedSql).toContain("text_body");
-    expect(preparedSql).toContain("html_body");
-    expect(preparedSql).toContain("WHERE id = ?");
-    expect(preparedSql).toContain("FROM user_mailbox_permissions");
+    const mainSql = preparedSqls[0];
+    expect(mainSql).toContain("SELECT");
+    expect(mainSql).toContain("mailbox_id");
+    expect(mainSql).toContain("folder_id");
+    expect(mainSql).toContain("text_body");
+    expect(mainSql).toContain("html_body");
+    expect(mainSql).toContain("WHERE id = ?");
+    expect(mainSql).toContain("FROM user_mailbox_permissions");
+    expect(preparedSqls[1]).toContain("message_attachments");
     expect(bind).toHaveBeenCalledWith("msg_1", "usr_1");
     expect(first).toHaveBeenCalledTimes(1);
   });
@@ -802,7 +806,7 @@ describe("messages api", () => {
             filename: "note.txt",
             type: "text/plain",
             disposition: "attachment",
-            content: expect.any(String),
+            content: expect.any(ArrayBuffer),
           }),
         ],
       }),

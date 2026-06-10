@@ -1,5 +1,13 @@
 import PostalMime from "postal-mime";
 
+export type ParsedInboundAttachment = {
+  filename: string | null;
+  mimeType: string;
+  disposition: "attachment" | "inline" | null;
+  contentId: string | null;
+  content: ArrayBuffer | Uint8Array | string;
+};
+
 export type ParsedInboundEmail = {
   fromEmail: string;
   toEmail: string;
@@ -12,6 +20,7 @@ export type ParsedInboundEmail = {
   snippet: string | null;
   receivedAt: string;
   rawBuffer: ArrayBuffer;
+  attachments: ParsedInboundAttachment[];
 };
 
 export async function parseInboundEmail(
@@ -36,6 +45,13 @@ export async function parseInboundEmail(
     snippet: buildSnippet(textBody, htmlBody),
     receivedAt: new Date().toISOString(),
     rawBuffer,
+    attachments: (parsedEmail.attachments || []).map((attachment) => ({
+      filename: attachment.filename,
+      mimeType: attachment.mimeType || "application/octet-stream",
+      disposition: attachment.disposition,
+      contentId: attachment.contentId || null,
+      content: attachment.content,
+    })),
   };
 }
 

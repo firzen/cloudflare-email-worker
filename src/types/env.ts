@@ -10,7 +10,7 @@ export type OutboundEmailPayload = {
 
 export type OutboundEmailAttachment = {
   filename: string;
-  content: string;
+  content: ArrayBuffer;
   type?: string;
   disposition?: string;
 };

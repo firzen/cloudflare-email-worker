@@ -113,3 +113,41 @@ export async function insertInboundMessage(
     record.rawKey,
   );
 }
+
+type InboundAttachmentRecord = {
+  id: string;
+  messageId: string;
+  filename: string;
+  contentType: string | null;
+  sizeBytes: number;
+  contentId: string | null;
+  disposition: string | null;
+  r2Key: string;
+};
+
+export async function insertInboundAttachment(
+  env: Env,
+  record: InboundAttachmentRecord,
+) {
+  await runStatement(
+    env.DB,
+    `INSERT INTO message_attachments (
+      id,
+      message_id,
+      filename,
+      content_type,
+      size_bytes,
+      content_id,
+      disposition,
+      r2_key
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    record.id,
+    record.messageId,
+    record.filename,
+    record.contentType,
+    record.sizeBytes,
+    record.contentId,
+    record.disposition,
+    record.r2Key,
+  );
+}

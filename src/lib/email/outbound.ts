@@ -87,19 +87,8 @@ export function buildOutboundEmailAttachments(
 ): OutboundEmailAttachment[] {
   return attachments.map((attachment) => ({
     filename: attachment.filename,
-    content: encodeBase64(attachment.data),
+    content: attachment.data,
     type: attachment.contentType ?? undefined,
     disposition: attachment.disposition ?? undefined,
   }));
-}
-
-function encodeBase64(buffer: ArrayBuffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary);
 }

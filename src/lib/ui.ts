@@ -246,13 +246,12 @@ export function renderInboxPage() {
       .shell {
         display: grid;
         grid-template-columns: 196px 320px minmax(620px, 1fr);
-        min-height: calc(100vh - 32px);
+        height: calc(100vh - 32px);
         background: rgba(255, 255, 255, 0.72);
         border: 1px solid rgba(214, 220, 229, 0.9);
         border-radius: 22px;
         overflow: hidden;
         box-shadow: var(--shadow);
-        backdrop-filter: blur(12px);
       }
 
       .sidebar,
@@ -267,6 +266,7 @@ export function renderInboxPage() {
         display: grid;
         grid-template-rows: auto auto 1fr auto;
         gap: 12px;
+        overflow: hidden;
       }
 
       .sidebar-top {
@@ -355,6 +355,7 @@ export function renderInboxPage() {
         overflow: hidden;
         white-space: nowrap;
         text-overflow: ellipsis;
+        min-width: 0;
       }
 
       .folder-kind {
@@ -370,6 +371,7 @@ export function renderInboxPage() {
         font-weight: 700;
         color: var(--text-faint);
         text-transform: uppercase;
+        flex-shrink: 0;
       }
 
       .footer-user {
@@ -405,6 +407,9 @@ export function renderInboxPage() {
       .user-meta strong {
         display: block;
         font-size: 12px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
       }
 
       .user-meta span {
@@ -438,6 +443,7 @@ export function renderInboxPage() {
         display: grid;
         grid-template-rows: auto auto 1fr;
         background: linear-gradient(180deg, #fbfcfd 0%, #f8fafc 100%);
+        overflow: hidden;
       }
 
       .conversation-toolbar,
@@ -509,6 +515,7 @@ export function renderInboxPage() {
 
       .day-group {
         overflow: auto;
+        min-height: 0;
       }
 
       .day-label {
@@ -646,6 +653,7 @@ export function renderInboxPage() {
         display: grid;
         grid-template-rows: auto auto 1fr;
         background: linear-gradient(180deg, #fdfefe 0%, #f7f9fc 100%);
+        overflow: hidden;
       }
 
       .toolbar-group {
@@ -686,6 +694,7 @@ export function renderInboxPage() {
 
       .detail-view {
         overflow: auto;
+        min-height: 0;
         padding: 12px 14px 18px;
         background: #f8fafc;
         opacity: 1;
@@ -708,7 +717,7 @@ export function renderInboxPage() {
         border-radius: 12px;
         background: linear-gradient(90deg, #eef2f7 0%, #f8fafd 45%, #eef2f7 100%);
         background-size: 200% 100%;
-        animation: shimmer 1.2s linear infinite;
+        animation: shimmer 1.2s linear 3;
       }
 
       .skeleton-line {
@@ -811,6 +820,38 @@ export function renderInboxPage() {
         line-height: 1.65;
         color: var(--text);
         white-space: pre-wrap;
+      }
+
+      .message-content-html {
+        white-space: normal;
+      }
+
+      .message-content-html img,
+      .message-content-html video {
+        max-width: 100%;
+        height: auto;
+      }
+
+      .message-content-html table {
+        max-width: 100%;
+        border-collapse: collapse;
+      }
+
+      .message-content-html pre {
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .message-content-html blockquote {
+        margin: 0 0 0 8px;
+        padding-left: 12px;
+        border-left: 3px solid var(--line-strong);
+        color: var(--text-soft);
+      }
+
+      .message-content-html a {
+        color: var(--accent);
       }
 
       .message-actions {
@@ -1066,7 +1107,7 @@ export function renderInboxPage() {
 
             <div class="sidebar-search">Shared inbox</div>
 
-            <div style="overflow:auto;padding-right:2px;">
+            <div style="overflow:auto;padding-right:2px;min-height:0;">
               <div class="section-title">Folders</div>
               <div class="folder-list" id="folder-list"></div>
             </div>
@@ -1269,6 +1310,28 @@ export function renderInboxPage() {
           .replaceAll(">", "&gt;")
           .replaceAll('"', "&quot;")
           .replaceAll("'", "&#39;");
+      }
+
+      function sanitizeHtml(html) {
+        const template = document.createElement("template");
+        template.innerHTML = String(html || "").trim();
+        const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_ELEMENT, null);
+        const toRemove = [];
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          if (node.nodeName === "SCRIPT" || node.nodeName === "IFRAME" || node.nodeName === "OBJECT" || node.nodeName === "EMBED") {
+            toRemove.push(node);
+            continue;
+          }
+          for (const attr of Array.from(node.attributes)) {
+            const name = attr.name.toLowerCase();
+            if (name.startsWith("on") || (name === "src" || name === "href") && /^javascript:/iu.test(attr.value)) {
+              node.removeAttribute(attr.name);
+            }
+          }
+        }
+        toRemove.forEach((node) => node.remove());
+        return template.innerHTML;
       }
 
       function setStatus(target, text, kind = "") {
@@ -1509,9 +1572,13 @@ export function renderInboxPage() {
         els.sessionBadge.textContent = formatMailboxCount(state.mailboxes);
         els.userAvatar.textContent = avatarText(user.name || user.email);
         els.userName.textContent = user.name;
+        els.userName.title = user.name || "";
         els.userEmail.textContent = user.email + " · " + user.role;
+        els.userEmail.title = els.userEmail.textContent;
         els.settingsUserName.textContent = user.name;
+        els.settingsUserName.title = user.name || "";
         els.settingsUserEmail.textContent = user.email + " · " + user.role;
+        els.settingsUserEmail.title = els.settingsUserEmail.textContent;
       }
 
       async function loadWorkspace() {
@@ -1568,7 +1635,7 @@ export function renderInboxPage() {
         const allRow = '' +
           '<button class="folder-row' + (state.selectedFolderId === null ? " active" : "") + '" type="button" data-folder-id="__all__">' +
             '<span class="folder-icon">◎</span>' +
-            '<span class="folder-name">All</span>' +
+            '<span class="folder-name" title="All">All</span>' +
             '<span class="folder-kind">ALL</span>' +
           '</button>';
 
@@ -1581,7 +1648,7 @@ export function renderInboxPage() {
           return '' +
             '<button class="folder-row' + active + '" type="button" data-folder-id="' + escapeHtml(folder.id) + '">' +
               '<span class="folder-icon">☰</span>' +
-              '<span class="folder-name">' + escapeHtml(folder.name) + '</span>' +
+              '<span class="folder-name" title="' + escapeHtml(folder.name) + '">' + escapeHtml(folder.name) + '</span>' +
               '<span class="folder-kind">' + kind.slice(0, 3) + '</span>' +
             '</button>';
           }).join("") + allRow;
@@ -1775,15 +1842,6 @@ export function renderInboxPage() {
               '</div>' +
             '</button>';
         }).join("");
-
-        els.messageList.querySelectorAll("[data-message-id]").forEach((node) => {
-          node.addEventListener("click", async () => {
-            state.selectedMessageId = node.getAttribute("data-message-id");
-            state.selectedMessageType = node.getAttribute("data-message-type") || "inbound";
-            renderMessages();
-            await loadSelectedMessageDetail();
-          });
-        });
       }
 
       async function loadMessageDetail(messageId) {
@@ -1871,10 +1929,14 @@ export function renderInboxPage() {
         setDetailActions(item);
 
         const attachmentSection = Array.isArray(item.attachments) && item.attachments.length
-          ? '<div class="attachment-list">' + item.attachments.map((attachment) =>
-              '<div class="attachment-item"><strong>' + escapeHtml(attachment.filename) + '</strong><span>' +
-              escapeHtml(formatFileSize(attachment.sizeBytes || 0)) + '</span></div>',
-            ).join("") + '</div>'
+          ? '<div class="attachment-list">' + item.attachments.map((attachment) => {
+              const downloadUrl = item.messageType === "outbound"
+                ? "/api/messages/sent/" + encodeURIComponent(item.id) + "/attachments/" + encodeURIComponent(attachment.id)
+                : "/api/messages/" + encodeURIComponent(item.id) + "/attachments/" + encodeURIComponent(attachment.id);
+              const downloadLink = '<a href="' + downloadUrl + '" download style="font-size:12px;color:var(--accent);text-decoration:none;" onclick="event.stopPropagation();">Download</a>';
+              return '<div class="attachment-item"><strong>' + escapeHtml(attachment.filename) + '</strong><span>' +
+                escapeHtml(formatFileSize(attachment.sizeBytes || 0)) + '</span>' + downloadLink + '</div>';
+            }).join("") + '</div>'
           : "";
 
         els.detailView.innerHTML = '' +
@@ -1894,7 +1956,9 @@ export function renderInboxPage() {
                 '<strong>Subject:</strong><span>' + escapeHtml(item.subject || "(no subject)") + '</span>' +
                 '<strong>Date:</strong><span>' + escapeHtml(displayDate(item.receivedAt)) + '</span>' +
               '</div>' +
-              '<div class="message-content">' + escapeHtml(item.textBody || item.snippet || item.htmlBody || "(empty)") + '</div>' +
+              (item.htmlBody
+                ? '<div class="message-content message-content-html">' + sanitizeHtml(item.htmlBody) + '</div>'
+                : '<div class="message-content">' + escapeHtml(item.textBody || item.snippet || "(empty)") + '</div>') +
               attachmentSection +
             '</div>' +
           '</article>' +
@@ -2133,6 +2197,15 @@ export function renderInboxPage() {
         if (!items.find((message) => message.id === state.selectedMessageId && message.message_type === state.selectedMessageType)) {
           setSelectedMessage(items[0] || null);
         }
+        renderMessages();
+        await loadSelectedMessageDetail();
+      });
+
+      els.messageList.addEventListener("click", async (event) => {
+        const node = event.target.closest("[data-message-id]");
+        if (!node) return;
+        state.selectedMessageId = node.getAttribute("data-message-id");
+        state.selectedMessageType = node.getAttribute("data-message-type") || "inbound";
         renderMessages();
         await loadSelectedMessageDetail();
       });

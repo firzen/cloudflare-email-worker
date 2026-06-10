@@ -187,6 +187,14 @@ type OutboundAttachmentRow = {
   size_bytes: number;
 };
 
+type InboundAttachmentRow = {
+  id: string;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number;
+  r2_key: string;
+};
+
 function buildReplySubject(subject: string) {
   return /^re:/iu.test(subject) ? subject : `Re: ${subject}`;
 }
@@ -440,6 +448,17 @@ messagesRouter.get("/:id", async (c) => {
     return c.json(messageNotFoundResponse(), 404);
   }
 
+  const attachmentsResult = await c.env.DB.prepare(
+    `
+      SELECT id, filename, content_type, size_bytes
+      FROM message_attachments
+      WHERE message_id = ?
+      ORDER BY created_at ASC, id ASC
+    `,
+  )
+    .bind(id)
+    .all<InboundAttachmentRow>();
+
   return c.json({
     item: {
       id: message.id,
@@ -453,8 +472,125 @@ messagesRouter.get("/:id", async (c) => {
       htmlBody: message.html_body,
       receivedAt: message.received_at,
       isRead: Boolean(message.is_read),
+      attachments: (attachmentsResult.results ?? []).map((attachment) => ({
+        id: attachment.id,
+        filename: attachment.filename,
+        contentType: attachment.content_type,
+        sizeBytes: attachment.size_bytes,
+      })),
     },
   });
+});
+
+messagesRouter.get("/sent/:id/attachments/:attachmentId", async (c) => {
+  const userId = c.get("userId");
+
+  if (!userId) {
+    return c.json(unauthorizedResponse(), 401);
+  }
+
+  const id = c.req.param("id");
+  const attachmentId = c.req.param("attachmentId");
+
+  const message = await firstRow<{ id: string }>(
+    c.env.DB,
+    `
+      SELECT id
+      FROM outbound_messages
+      WHERE id = ?
+        AND status = 'sent'
+        AND sent_at IS NOT NULL
+        AND sent_as_mailbox_id IN (
+          SELECT mailbox_id
+          FROM user_mailbox_permissions
+          WHERE user_id = ?
+        )
+    `,
+    id,
+    userId,
+  );
+
+  if (!message) {
+    return c.json(messageNotFoundResponse(), 404);
+  }
+
+  const attachment = await firstRow<{ id: string; filename: string; content_type: string | null; r2_key: string }>(
+    c.env.DB,
+    `
+      SELECT id, filename, content_type, r2_key
+      FROM outbound_message_attachments
+      WHERE id = ? AND outbound_message_id = ?
+    `,
+    attachmentId,
+    id,
+  );
+
+  if (!attachment) {
+    return c.json({ error: { code: "ATTACHMENT_NOT_FOUND", message: "Attachment not found." } }, 404);
+  }
+
+  const object = await c.env.ATTACHMENTS.get(attachment.r2_key);
+  if (!object) {
+    return c.json({ error: { code: "ATTACHMENT_NOT_FOUND", message: "Attachment content not found." } }, 404);
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": attachment.content_type || "application/octet-stream",
+    "Content-Disposition": `attachment; filename="${attachment.filename}"`,
+  };
+
+  if (object.httpEtag) {
+    headers.ETag = object.httpEtag;
+  }
+
+  return new Response(object.body, { headers });
+});
+
+messagesRouter.get("/:id/attachments/:attachmentId", async (c) => {
+  const userId = c.get("userId");
+
+  if (!userId) {
+    return c.json(unauthorizedResponse(), 401);
+  }
+
+  const id = c.req.param("id");
+  const attachmentId = c.req.param("attachmentId");
+
+  const message = await findVisibleMessageForUser(c.env.DB, id, userId);
+  if (!message) {
+    return c.json(messageNotFoundResponse(), 404);
+  }
+
+  const attachment = await firstRow<{ id: string; filename: string; content_type: string | null; r2_key: string }>(
+    c.env.DB,
+    `
+      SELECT id, filename, content_type, r2_key
+      FROM message_attachments
+      WHERE id = ? AND message_id = ?
+    `,
+    attachmentId,
+    id,
+  );
+
+  if (!attachment) {
+    return c.json({ error: { code: "ATTACHMENT_NOT_FOUND", message: "Attachment not found." } }, 404);
+  }
+
+  const object = await c.env.ATTACHMENTS.get(attachment.r2_key);
+  if (!object) {
+    return c.json({ error: { code: "ATTACHMENT_NOT_FOUND", message: "Attachment content not found." } }, 404);
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": attachment.content_type || "application/octet-stream",
+    "Content-Disposition": `attachment; filename="${attachment.filename}"`,
+  };
+
+  if (object.httpEtag) {
+    headers.ETag = object.httpEtag;
+  }
+
+  return new Response(object.body, { headers });
 });
 
 messagesRouter.post("/:id/read", async (c) => {
