@@ -1347,7 +1347,7 @@ export function renderInboxPage() {
             </div>
             <div class="field" style="margin-bottom:0;">
               <label for="compose-subject">Subject</label>
-              <input id="compose-subject" type="text" placeholder="Subject" />
+              <input id="compose-subject" type="text" placeholder="Subject" required />
             </div>
             <div class="field" style="margin-bottom:0;">
               <label for="compose-text">Message</label>
@@ -2350,6 +2350,10 @@ export function renderInboxPage() {
 
         if (!to && !cc && !bcc) {
           setStatus(els.composeStatus, "At least one recipient is required.", "error");
+          return;
+        }
+        if (!subject) {
+          setStatus(els.composeStatus, "Subject is required.", "error");
           return;
         }
         if (!textBody && attachments.length === 0) {

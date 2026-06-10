@@ -1172,6 +1172,28 @@ describe("messages api", () => {
       });
     });
 
+    it("returns 400 when subject is empty", async () => {
+      const db = createFakeDb({
+        permissions: [{ user_id: "usr_sender", mailbox_id: "mbx_support", permission: "reply" }],
+        mailboxes: [{ id: "mbx_support", full_address: "support@example.net" }],
+      });
+      const cookie = await createSessionCookie("usr_sender", "secret");
+      const res = await app.request(
+        "/api/messages/send",
+        {
+          method: "POST",
+          body: JSON.stringify({ mailboxId: "mbx_support", to: "recipient@example.com", textBody: "Hello" }),
+          headers: { cookie: `session=${cookie}`, "content-type": "application/json" },
+        },
+        { APP_SECRET: "secret", DB: db },
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: { code: "INVALID_SUBJECT", message: "Subject is required." },
+      });
+    });
+
     it("sends a message and persists outbound and audit records", async () => {
       const send = vi.fn(async () => ({ id: "provider-send-1" }));
       const run = vi.fn(async () => ({ success: true }));
@@ -1346,6 +1368,7 @@ describe("messages api", () => {
           body: JSON.stringify({
             mailboxId: "mbx_support",
             to: "recipient@example.com",
+            subject: "Hello",
             textBody: "Hello.",
           }),
           headers: {

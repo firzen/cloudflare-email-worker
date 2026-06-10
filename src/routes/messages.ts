@@ -842,6 +842,13 @@ messagesRouter.post("/send", async (c) => {
     return c.json(invalidSendBodyResponse(), 400);
   }
 
+  if (!finalSubject) {
+    return c.json(
+      { error: { code: "INVALID_SUBJECT", message: "Subject is required." } },
+      400,
+    );
+  }
+
   if (sendReq.attachments.some((attachment) => !attachment.name.trim() || attachment.size === 0)) {
     return c.json(invalidAttachmentResponse(), 400);
   }
@@ -978,14 +985,16 @@ messagesRouter.post("/send", async (c) => {
           target_type,
           target_id,
           message_id,
+          outbound_message_id,
           metadata_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
       createId("log"),
       userId,
       "send_message",
       "outbound_message",
       outboundMessageId,
+      null,
       outboundMessageId,
       JSON.stringify({
         outboundMessageId,
