@@ -261,6 +261,7 @@ function buildReplyHeaders(message: ReplyableMessageRow) {
 
 type ParsedSendRequest = {
   mailboxId: string;
+  fromPrefix: string;
   to: string;
   cc: string;
   bcc: string;
@@ -281,6 +282,7 @@ async function parseSendRequest(request: Request): Promise<ParsedSendRequest> {
 
     return {
       mailboxId: typeof form.get("mailboxId") === "string" ? String(form.get("mailboxId")).trim() : "",
+      fromPrefix: typeof form.get("fromPrefix") === "string" ? String(form.get("fromPrefix")).trim() : "",
       to: typeof form.get("to") === "string" ? String(form.get("to")).trim() : "",
       cc: typeof form.get("cc") === "string" ? String(form.get("cc")).trim() : "",
       bcc: typeof form.get("bcc") === "string" ? String(form.get("bcc")).trim() : "",
@@ -295,6 +297,7 @@ async function parseSendRequest(request: Request): Promise<ParsedSendRequest> {
 
   const body = await request.json<{
     mailboxId?: string;
+    fromPrefix?: string;
     to?: string;
     cc?: string;
     bcc?: string;
@@ -304,6 +307,7 @@ async function parseSendRequest(request: Request): Promise<ParsedSendRequest> {
   }>();
   return {
     mailboxId: typeof body.mailboxId === "string" ? body.mailboxId.trim() : "",
+    fromPrefix: typeof body.fromPrefix === "string" ? body.fromPrefix.trim() : "",
     to: typeof body.to === "string" ? body.to.trim() : "",
     cc: typeof body.cc === "string" ? body.cc.trim() : "",
     bcc: typeof body.bcc === "string" ? body.bcc.trim() : "",
@@ -848,6 +852,10 @@ messagesRouter.post("/send", async (c) => {
   const allRecipients = [...toRecipients, ...ccRecipients, ...bccRecipients];
   const primaryTo = toRecipients[0] ?? allRecipients[0];
 
+  const fromPrefix = sendReq.fromPrefix;
+  const domain = mailbox.full_address.split("@")[1] || mailbox.full_address;
+  const fromEmail = fromPrefix ? `${fromPrefix}@${domain}` : mailbox.full_address;
+
   try {
     await runStatement(
       c.env.DB,
@@ -876,7 +884,7 @@ messagesRouter.post("/send", async (c) => {
       null,
       userId,
       mailbox.id,
-      mailbox.full_address,
+      fromEmail,
       primaryTo,
       JSON.stringify(ccRecipients),
       JSON.stringify(bccRecipients),
@@ -909,7 +917,7 @@ messagesRouter.post("/send", async (c) => {
   let providerResult: { id?: string; messageId?: string } | void = undefined;
 
   const emailPayload: import("../types/env").OutboundEmailPayload = {
-    from: mailbox.full_address,
+    from: fromEmail,
     to: toRecipients.length === 1 ? toRecipients[0] : toRecipients.length > 0 ? toRecipients.join(", ") : primaryTo,
     subject: finalSubject,
     text: textBody || undefined,
@@ -946,54 +954,58 @@ messagesRouter.post("/send", async (c) => {
 
   const providerMessageId = providerResult?.messageId ?? providerResult?.id ?? null;
 
-  await runStatement(
-    c.env.DB,
-    `
-      UPDATE outbound_messages
-      SET provider_message_id = ?, status = ?, error_message = NULL, sent_at = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `,
-    providerMessageId,
-    "sent",
-    sentAt,
-    outboundMessageId,
-  );
-
-  await runStatement(
-    c.env.DB,
-    `
-      INSERT INTO audit_logs (
-        id,
-        user_id,
-        action,
-        target_type,
-        target_id,
-        message_id,
-        metadata_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-    createId("log"),
-    userId,
-    "send_message",
-    "outbound_message",
-    outboundMessageId,
-    outboundMessageId,
-    JSON.stringify({
-      outboundMessageId,
+  try {
+    await runStatement(
+      c.env.DB,
+      `
+        UPDATE outbound_messages
+        SET provider_message_id = ?, status = ?, error_message = NULL, sent_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
       providerMessageId,
-      fromEmail: mailbox.full_address,
-      toEmail: primaryTo,
-      cc: ccRecipients,
-      bcc: bccRecipients,
-      sentAsMailboxId: mailbox.id,
-      attachmentCount: persistedAttachments.length,
-      attachments: persistedAttachments.map((attachment) => ({
-        filename: attachment.filename,
-        contentType: attachment.contentType,
-        sizeBytes: attachment.sizeBytes,
-      })),
-    }),
-  );
+      "sent",
+      sentAt,
+      outboundMessageId,
+    );
+
+    await runStatement(
+      c.env.DB,
+      `
+        INSERT INTO audit_logs (
+          id,
+          user_id,
+          action,
+          target_type,
+          target_id,
+          message_id,
+          metadata_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      createId("log"),
+      userId,
+      "send_message",
+      "outbound_message",
+      outboundMessageId,
+      outboundMessageId,
+      JSON.stringify({
+        outboundMessageId,
+        providerMessageId,
+        fromEmail,
+        toEmail: primaryTo,
+        cc: ccRecipients,
+        bcc: bccRecipients,
+        sentAsMailboxId: mailbox.id,
+        attachmentCount: persistedAttachments.length,
+        attachments: persistedAttachments.map((attachment) => ({
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          sizeBytes: attachment.sizeBytes,
+        })),
+      }),
+    );
+  } catch (error) {
+    return c.json(sendInternalErrorResponse("persist_sent", error), 500);
+  }
 
   return c.json({ ok: true, providerMessageId });
 });

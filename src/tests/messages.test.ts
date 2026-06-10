@@ -1234,6 +1234,49 @@ describe("messages api", () => {
       expect(run).toHaveBeenCalledTimes(3);
     });
 
+    it("uses fromPrefix to build the sender address", async () => {
+      const send = vi.fn(async () => ({ id: "provider-send-2" }));
+      const run = vi.fn(async () => ({ success: true }));
+      const mailbox = { id: "mbx_support", full_address: "support@example.net" };
+      const bindFirst = vi.fn(() => ({ first: vi.fn(async () => mailbox) }));
+      const bindRun = vi.fn(() => ({ run }));
+      const prepare = vi
+        .fn()
+        .mockImplementationOnce(() => ({ bind: bindFirst }))
+        .mockImplementation(() => ({ bind: bindRun }));
+      const cookie = await createSessionCookie("usr_sender", "secret");
+      const res = await app.request(
+        "/api/messages/send",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            mailboxId: "mbx_support",
+            fromPrefix: "sam",
+            to: "recipient@example.com",
+            subject: "Hello",
+            textBody: "World",
+          }),
+          headers: {
+            cookie: `session=${cookie}`,
+            "content-type": "application/json",
+          },
+        },
+        {
+          APP_SECRET: "secret",
+          DB: { prepare },
+          EMAIL: { send },
+        },
+      );
+
+      expect(res.status).toBe(200);
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from: "sam@example.net",
+          to: "recipient@example.com",
+        }),
+      );
+    });
+
     it("sends a message with attachments via multipart/form-data", async () => {
       const send = vi.fn(async () => ({ messageId: "cf-send-1" }));
       const run = vi.fn(async () => ({ success: true }));

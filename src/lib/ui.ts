@@ -1106,6 +1106,22 @@ export function renderInboxPage() {
         width: min(640px, 100%);
       }
 
+      .compose-from-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .compose-from-row input,
+      .compose-from-row select {
+        width: 100%;
+        border: 1px solid var(--line-strong);
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: white;
+        color: var(--text);
+      }
+
       @media (max-width: 1360px) {
         .shell {
           grid-template-columns: 180px 280px minmax(520px, 1fr);
@@ -1310,8 +1326,12 @@ export function renderInboxPage() {
           </div>
           <div class="modal-body">
             <div class="field" style="margin-bottom:0;">
-              <label for="compose-from">From</label>
-              <select id="compose-from"></select>
+              <label>From</label>
+              <div class="compose-from-row">
+                <input id="compose-from-prefix" type="text" placeholder="sam" style="flex:1;" />
+                <span style="color:var(--text-soft);padding:0 4px;">@</span>
+                <select id="compose-from-domain" style="flex:2;"></select>
+              </div>
             </div>
             <div class="field" style="margin-bottom:0;">
               <label for="compose-to">To</label>
@@ -1421,7 +1441,8 @@ export function renderInboxPage() {
         cloudflareSyncResults: document.getElementById("cloudflare-sync-results"),
         composeButton: document.getElementById("compose-button"),
         composeModal: document.getElementById("compose-modal"),
-        composeFrom: document.getElementById("compose-from"),
+        composeFromPrefix: document.getElementById("compose-from-prefix"),
+        composeFromDomain: document.getElementById("compose-from-domain"),
         composeTo: document.getElementById("compose-to"),
         composeCc: document.getElementById("compose-cc"),
         composeBcc: document.getElementById("compose-bcc"),
@@ -1695,7 +1716,8 @@ export function renderInboxPage() {
       }
 
       function resetComposeForm() {
-        els.composeFrom.innerHTML = "";
+        els.composeFromPrefix.value = "";
+        els.composeFromDomain.innerHTML = "";
         els.composeTo.value = "";
         els.composeCc.value = "";
         els.composeBcc.value = "";
@@ -1708,9 +1730,20 @@ export function renderInboxPage() {
       }
 
       function renderComposeFromOptions() {
-        els.composeFrom.innerHTML = state.mailboxes.map((mailbox) =>
-          '<option value="' + escapeHtml(mailbox.id) + '">' + escapeHtml(mailbox.full_address) + '</option>'
+        const domainMap = new Map();
+        for (const mailbox of state.mailboxes) {
+          const domain = mailbox.full_address.split("@")[1] || mailbox.full_address;
+          if (!domainMap.has(domain)) {
+            domainMap.set(domain, { domain, mailboxId: mailbox.id, localPart: mailbox.full_address.split("@")[0] || "" });
+          }
+        }
+        const options = Array.from(domainMap.values());
+        els.composeFromDomain.innerHTML = options.map((opt) =>
+          '<option value="' + escapeHtml(opt.mailboxId) + '" data-local-part="' + escapeHtml(opt.localPart) + '">' + escapeHtml(opt.domain) + '</option>'
         ).join("");
+        if (options[0]) {
+          els.composeFromPrefix.value = options[0].localPart;
+        }
       }
 
       async function boot() {
@@ -2306,7 +2339,8 @@ export function renderInboxPage() {
       });
 
       els.composeSendButton.addEventListener("click", async () => {
-        const mailboxId = els.composeFrom.value;
+        const mailboxId = els.composeFromDomain.value;
+        const fromPrefix = els.composeFromPrefix.value.trim();
         const to = els.composeTo.value.trim();
         const cc = els.composeCc.value.trim();
         const bcc = els.composeBcc.value.trim();
@@ -2325,6 +2359,7 @@ export function renderInboxPage() {
 
         const form = new FormData();
         form.set("mailboxId", mailboxId);
+        form.set("fromPrefix", fromPrefix);
         form.set("to", to);
         form.set("cc", cc);
         form.set("bcc", bcc);
