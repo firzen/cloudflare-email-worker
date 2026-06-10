@@ -1091,4 +1091,246 @@ describe("messages api", () => {
       },
     });
   });
+
+  describe("POST /api/messages/send", () => {
+    it("rejects unauthenticated users", async () => {
+      const res = await app.request("/api/messages/send", {
+        method: "POST",
+        body: JSON.stringify({ to: "recipient@example.com", textBody: "Hello." }),
+        headers: { "content-type": "application/json" },
+      });
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        error: { code: "UNAUTHORIZED", message: "Authentication required." },
+      });
+    });
+
+    it("returns 404 when the mailbox is not sendable by the user", async () => {
+      const db = createFakeDb({
+        permissions: [{ user_id: "usr_reader", mailbox_id: "mbx_support", permission: "read" }],
+        mailboxes: [{ id: "mbx_support", full_address: "support@example.net" }],
+      });
+      const cookie = await createSessionCookie("usr_reader", "secret");
+      const res = await app.request(
+        "/api/messages/send",
+        {
+          method: "POST",
+          body: JSON.stringify({ mailboxId: "mbx_support", to: "recipient@example.com", textBody: "Hello." }),
+          headers: { cookie: `session=${cookie}`, "content-type": "application/json" },
+        },
+        { APP_SECRET: "secret", DB: db },
+      );
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({
+        error: { code: "MESSAGE_NOT_FOUND", message: "Message not found." },
+      });
+    });
+
+    it("returns 400 when recipients are empty", async () => {
+      const db = createFakeDb({
+        permissions: [{ user_id: "usr_sender", mailbox_id: "mbx_support", permission: "reply" }],
+        mailboxes: [{ id: "mbx_support", full_address: "support@example.net" }],
+      });
+      const cookie = await createSessionCookie("usr_sender", "secret");
+      const res = await app.request(
+        "/api/messages/send",
+        {
+          method: "POST",
+          body: JSON.stringify({ mailboxId: "mbx_support", to: "", cc: "", bcc: "", textBody: "Hello." }),
+          headers: { cookie: `session=${cookie}`, "content-type": "application/json" },
+        },
+        { APP_SECRET: "secret", DB: db },
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: { code: "INVALID_RECIPIENTS", message: "At least one recipient (to, cc, or bcc) is required." },
+      });
+    });
+
+    it("returns 400 when send body and attachments are empty", async () => {
+      const db = createFakeDb({
+        permissions: [{ user_id: "usr_sender", mailbox_id: "mbx_support", permission: "reply" }],
+        mailboxes: [{ id: "mbx_support", full_address: "support@example.net" }],
+      });
+      const cookie = await createSessionCookie("usr_sender", "secret");
+      const res = await app.request(
+        "/api/messages/send",
+        {
+          method: "POST",
+          body: JSON.stringify({ mailboxId: "mbx_support", to: "recipient@example.com" }),
+          headers: { cookie: `session=${cookie}`, "content-type": "application/json" },
+        },
+        { APP_SECRET: "secret", DB: db },
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: { code: "INVALID_SEND_BODY", message: "Either textBody, htmlBody, or attachments is required." },
+      });
+    });
+
+    it("sends a message and persists outbound and audit records", async () => {
+      const send = vi.fn(async () => ({ id: "provider-send-1" }));
+      const run = vi.fn(async () => ({ success: true }));
+      const mailbox = { id: "mbx_support", full_address: "support@example.net" };
+      const bindFirst = vi.fn(() => ({ first: vi.fn(async () => mailbox) }));
+      const bindRun = vi.fn(() => ({ run }));
+      const prepare = vi
+        .fn()
+        .mockImplementationOnce(() => ({ bind: bindFirst }))
+        .mockImplementation(() => ({ bind: bindRun }));
+      const cookie = await createSessionCookie("usr_sender", "secret");
+      const res = await app.request(
+        "/api/messages/send",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            mailboxId: "mbx_support",
+            to: "recipient@example.com",
+            cc: "cc@example.com",
+            subject: "Hello",
+            textBody: "World",
+          }),
+          headers: {
+            cookie: `session=${cookie}`,
+            "content-type": "application/json",
+          },
+        },
+        {
+          APP_SECRET: "secret",
+          DB: { prepare },
+          EMAIL: { send },
+        },
+      );
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        ok: true,
+        providerMessageId: "provider-send-1",
+      });
+      expect(send).toHaveBeenCalledWith({
+        from: "support@example.net",
+        to: "recipient@example.com",
+        cc: "cc@example.com",
+        subject: "Hello",
+        text: "World",
+        attachments: [],
+      });
+      expect(prepare).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("INSERT INTO outbound_messages"),
+      );
+      expect(prepare).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining("UPDATE outbound_messages"),
+      );
+      expect(prepare).toHaveBeenNthCalledWith(
+        4,
+        expect.stringContaining("INSERT INTO audit_logs"),
+      );
+      expect(run).toHaveBeenCalledTimes(3);
+    });
+
+    it("sends a message with attachments via multipart/form-data", async () => {
+      const send = vi.fn(async () => ({ messageId: "cf-send-1" }));
+      const run = vi.fn(async () => ({ success: true }));
+      const put = vi.fn(async () => ({}));
+      const mailbox = { id: "mbx_support", full_address: "support@example.net" };
+      const bindFirst = vi.fn(() => ({ first: vi.fn(async () => mailbox) }));
+      const bindRun = vi.fn(() => ({ run }));
+      const prepare = vi
+        .fn()
+        .mockImplementationOnce(() => ({ bind: bindFirst }))
+        .mockImplementation(() => ({ bind: bindRun }));
+      const cookie = await createSessionCookie("usr_sender", "secret");
+      const form = new FormData();
+      form.set("mailboxId", "mbx_support");
+      form.set("to", "recipient@example.com");
+      form.set("subject", "With attachment");
+      form.set("textBody", "See attached.");
+      form.append("attachments", new File(["content"], "doc.txt", { type: "text/plain" }));
+      const res = await app.request(
+        "/api/messages/send",
+        {
+          method: "POST",
+          body: form,
+          headers: { cookie: `session=${cookie}` },
+        },
+        {
+          APP_SECRET: "secret",
+          DB: { prepare },
+          EMAIL: { send },
+          ATTACHMENTS: { put },
+        },
+      );
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        ok: true,
+        providerMessageId: "cf-send-1",
+      });
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from: "support@example.net",
+          to: "recipient@example.com",
+          subject: "With attachment",
+          text: "See attached.",
+        }),
+      );
+      expect(put).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns a structured error when the email provider send fails", async () => {
+      const send = vi.fn(async () => {
+        throw new Error("sending domain is not configured");
+      });
+      const run = vi.fn(async () => ({ success: true }));
+      const mailbox = { id: "mbx_support", full_address: "support@example.net" };
+      const bindFirst = vi.fn(() => ({ first: vi.fn(async () => mailbox) }));
+      const bindRun = vi.fn(() => ({ run }));
+      const prepare = vi
+        .fn()
+        .mockImplementationOnce(() => ({ bind: bindFirst }))
+        .mockImplementation(() => ({ bind: bindRun }));
+      const cookie = await createSessionCookie("usr_sender", "secret");
+      const res = await app.request(
+        "/api/messages/send",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            mailboxId: "mbx_support",
+            to: "recipient@example.com",
+            textBody: "Hello.",
+          }),
+          headers: {
+            cookie: `session=${cookie}`,
+            "content-type": "application/json",
+          },
+        },
+        {
+          APP_SECRET: "secret",
+          DB: { prepare },
+          EMAIL: { send },
+        },
+      );
+
+      expect(res.status).toBe(502);
+      expect(await res.json()).toEqual({
+        error: {
+          code: "EMAIL_SEND_FAILED",
+          message: "Email delivery failed.",
+          details: "sending domain is not configured",
+        },
+      });
+      expect(prepare).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO outbound_messages"),
+      );
+      expect(prepare).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE outbound_messages"),
+      );
+    });
+  });
 });

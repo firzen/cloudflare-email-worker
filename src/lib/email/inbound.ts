@@ -19,10 +19,10 @@ function attachmentToArrayBuffer(content: ArrayBuffer | Uint8Array | string): Ar
     return content;
   }
   if (content instanceof Uint8Array) {
-    return content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
+    return content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) as ArrayBuffer;
   }
   const encoder = new TextEncoder();
-  return encoder.encode(content).buffer;
+  return encoder.encode(content).buffer as ArrayBuffer;
 }
 
 export async function persistInboundEmail(

@@ -40,11 +40,11 @@ function invalidReplyBodyResponse() {
   } as const;
 }
 
-function emailSendFailedResponse(details?: string) {
+function emailSendFailedResponse(details?: string, message = "Reply delivery failed.") {
   return {
     error: {
       code: "EMAIL_SEND_FAILED",
-      message: "Reply delivery failed.",
+      message,
       details: details ?? "Unknown email provider error.",
     },
   } as const;
@@ -65,6 +65,27 @@ function replyInternalErrorResponse(step: string, error: unknown) {
     error: {
       code: "REPLY_INTERNAL_ERROR",
       message: "Reply could not be processed.",
+      step,
+      details,
+    },
+  } as const;
+}
+
+function invalidSendBodyResponse() {
+  return {
+    error: {
+      code: "INVALID_SEND_BODY",
+      message: "Either textBody, htmlBody, or attachments is required.",
+    },
+  } as const;
+}
+
+function sendInternalErrorResponse(step: string, error: unknown) {
+  const details = error instanceof Error ? error.message : "Unknown send processing error.";
+  return {
+    error: {
+      code: "SEND_INTERNAL_ERROR",
+      message: "Message could not be sent.",
       step,
       details,
     },
@@ -159,6 +180,32 @@ async function findReplyableMessageForUser(db: D1Database, id: string, userId: s
   );
 }
 
+type SendableMailboxRow = {
+  id: string;
+  full_address: string;
+};
+
+async function findSendableMailboxForUser(db: D1Database, mailboxId: string, userId: string) {
+  return firstRow<SendableMailboxRow>(
+    db,
+    `
+      SELECT
+        id,
+        full_address
+      FROM mailboxes
+      WHERE id = ?
+        AND id IN (
+          SELECT mailbox_id
+          FROM user_mailbox_permissions
+          WHERE user_id = ?
+            AND permission IN ('reply', 'manage')
+        )
+    `,
+    mailboxId,
+    userId,
+  );
+}
+
 type SentMessageListRow = {
   id: string;
   from_email: string;
@@ -212,14 +259,18 @@ function buildReplyHeaders(message: ReplyableMessageRow) {
   return headers;
 }
 
-type ParsedReplyRequest = {
+type ParsedSendRequest = {
+  mailboxId: string;
+  to: string;
+  cc: string;
+  bcc: string;
   subject: string;
   textBody: string;
   htmlBody: string;
   attachments: File[];
 };
 
-async function parseReplyRequest(request: Request): Promise<ParsedReplyRequest> {
+async function parseSendRequest(request: Request): Promise<ParsedSendRequest> {
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("multipart/form-data")) {
@@ -229,6 +280,10 @@ async function parseReplyRequest(request: Request): Promise<ParsedReplyRequest> 
       .filter((value): value is File => value instanceof File);
 
     return {
+      mailboxId: typeof form.get("mailboxId") === "string" ? String(form.get("mailboxId")).trim() : "",
+      to: typeof form.get("to") === "string" ? String(form.get("to")).trim() : "",
+      cc: typeof form.get("cc") === "string" ? String(form.get("cc")).trim() : "",
+      bcc: typeof form.get("bcc") === "string" ? String(form.get("bcc")).trim() : "",
       subject: typeof form.get("subject") === "string" ? String(form.get("subject")).trim() : "",
       textBody:
         typeof form.get("textBody") === "string" ? String(form.get("textBody")).trim() : "",
@@ -238,8 +293,20 @@ async function parseReplyRequest(request: Request): Promise<ParsedReplyRequest> 
     };
   }
 
-  const body = await request.json<{ subject?: string; textBody?: string; htmlBody?: string }>();
+  const body = await request.json<{
+    mailboxId?: string;
+    to?: string;
+    cc?: string;
+    bcc?: string;
+    subject?: string;
+    textBody?: string;
+    htmlBody?: string;
+  }>();
   return {
+    mailboxId: typeof body.mailboxId === "string" ? body.mailboxId.trim() : "",
+    to: typeof body.to === "string" ? body.to.trim() : "",
+    cc: typeof body.cc === "string" ? body.cc.trim() : "",
+    bcc: typeof body.bcc === "string" ? body.bcc.trim() : "",
     subject: typeof body.subject === "string" ? body.subject.trim() : "",
     textBody: typeof body.textBody === "string" ? body.textBody.trim() : "",
     htmlBody: typeof body.htmlBody === "string" ? body.htmlBody.trim() : "",
@@ -722,6 +789,215 @@ messagesRouter.post("/:id/move", async (c) => {
   return c.json({ ok: true });
 });
 
+messagesRouter.post("/send", async (c) => {
+  const userId = c.get("userId");
+
+  if (!userId) {
+    return c.json(unauthorizedResponse(), 401);
+  }
+
+  let sendReq: ParsedSendRequest;
+  try {
+    sendReq = await parseSendRequest(c.req.raw);
+  } catch (error) {
+    return c.json(sendInternalErrorResponse("parse_request", error), 500);
+  }
+
+  const mailboxId = sendReq.mailboxId;
+  const mailbox = mailboxId ? await findSendableMailboxForUser(c.env.DB, mailboxId, userId) : null;
+
+  if (!mailbox) {
+    return c.json(messageNotFoundResponse(), 404);
+  }
+
+  const toRecipients = sendReq.to
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const ccRecipients = sendReq.cc
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const bccRecipients = sendReq.bcc
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (toRecipients.length === 0 && ccRecipients.length === 0 && bccRecipients.length === 0) {
+    return c.json(
+      { error: { code: "INVALID_RECIPIENTS", message: "At least one recipient (to, cc, or bcc) is required." } },
+      400,
+    );
+  }
+
+  const textBody = sendReq.textBody;
+  const htmlBody = sendReq.htmlBody;
+  const finalSubject = sendReq.subject;
+
+  if (!textBody && !htmlBody && sendReq.attachments.length === 0) {
+    return c.json(invalidSendBodyResponse(), 400);
+  }
+
+  if (sendReq.attachments.some((attachment) => !attachment.name.trim() || attachment.size === 0)) {
+    return c.json(invalidAttachmentResponse(), 400);
+  }
+
+  const outboundMessageId = createId("out");
+  const sentAt = new Date().toISOString();
+
+  const allRecipients = [...toRecipients, ...ccRecipients, ...bccRecipients];
+  const primaryTo = toRecipients[0] ?? allRecipients[0];
+
+  try {
+    await runStatement(
+      c.env.DB,
+      `
+        INSERT INTO outbound_messages (
+          id,
+          reply_to_message_id,
+          sent_by_user_id,
+          sent_as_mailbox_id,
+          from_email,
+          to_email,
+          cc_json,
+          bcc_json,
+          subject,
+          text_body,
+          html_body,
+          in_reply_to_header,
+          references_header,
+          provider_message_id,
+          status,
+          error_message,
+          sent_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      outboundMessageId,
+      null,
+      userId,
+      mailbox.id,
+      mailbox.full_address,
+      primaryTo,
+      JSON.stringify(ccRecipients),
+      JSON.stringify(bccRecipients),
+      finalSubject,
+      textBody || null,
+      htmlBody || null,
+      null,
+      null,
+      null,
+      "pending",
+      null,
+      null,
+    );
+  } catch (error) {
+    return c.json(sendInternalErrorResponse("prepare_outbound", error), 500);
+  }
+
+  let persistedAttachments;
+  try {
+    persistedAttachments = await persistOutboundAttachments(
+      c.env.DB,
+      c.env.ATTACHMENTS,
+      outboundMessageId,
+      sendReq.attachments,
+    );
+  } catch (error) {
+    return c.json(sendInternalErrorResponse("persist_attachments", error), 500);
+  }
+
+  let providerResult: { id?: string; messageId?: string } | void = undefined;
+
+  const emailPayload: import("../types/env").OutboundEmailPayload = {
+    from: mailbox.full_address,
+    to: toRecipients.length === 1 ? toRecipients[0] : toRecipients.length > 0 ? toRecipients.join(", ") : primaryTo,
+    subject: finalSubject,
+    text: textBody || undefined,
+    attachments: buildOutboundEmailAttachments(persistedAttachments),
+  };
+
+  if (ccRecipients.length > 0) {
+    emailPayload.cc = ccRecipients.join(", ");
+  }
+  if (bccRecipients.length > 0) {
+    emailPayload.bcc = bccRecipients.join(", ");
+  }
+  if (htmlBody) {
+    emailPayload.html = htmlBody;
+  }
+
+  try {
+    providerResult = await c.env.EMAIL.send(emailPayload);
+  } catch (error) {
+    const details = error instanceof Error ? error.message : "Unknown email provider error.";
+    await runStatement(
+      c.env.DB,
+      `
+        UPDATE outbound_messages
+        SET status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
+      "failed",
+      details,
+      outboundMessageId,
+    );
+    return c.json(emailSendFailedResponse(details, "Email delivery failed."), 502);
+  }
+
+  const providerMessageId = providerResult?.messageId ?? providerResult?.id ?? null;
+
+  await runStatement(
+    c.env.DB,
+    `
+      UPDATE outbound_messages
+      SET provider_message_id = ?, status = ?, error_message = NULL, sent_at = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `,
+    providerMessageId,
+    "sent",
+    sentAt,
+    outboundMessageId,
+  );
+
+  await runStatement(
+    c.env.DB,
+    `
+      INSERT INTO audit_logs (
+        id,
+        user_id,
+        action,
+        target_type,
+        target_id,
+        message_id,
+        metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    createId("log"),
+    userId,
+    "send_message",
+    "outbound_message",
+    outboundMessageId,
+    outboundMessageId,
+    JSON.stringify({
+      outboundMessageId,
+      providerMessageId,
+      fromEmail: mailbox.full_address,
+      toEmail: primaryTo,
+      cc: ccRecipients,
+      bcc: bccRecipients,
+      sentAsMailboxId: mailbox.id,
+      attachmentCount: persistedAttachments.length,
+      attachments: persistedAttachments.map((attachment) => ({
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        sizeBytes: attachment.sizeBytes,
+      })),
+    }),
+  );
+
+  return c.json({ ok: true, providerMessageId });
+});
+
 messagesRouter.post("/:id/reply", async (c) => {
   const userId = c.get("userId");
 
@@ -736,9 +1012,9 @@ messagesRouter.post("/:id/reply", async (c) => {
     return c.json(messageNotFoundResponse(), 404);
   }
 
-  let reply: ParsedReplyRequest;
+  let reply: ParsedSendRequest;
   try {
-    reply = await parseReplyRequest(c.req.raw);
+    reply = await parseSendRequest(c.req.raw);
   } catch (error) {
     return c.json(replyInternalErrorResponse("parse_request", error), 500);
   }

@@ -132,7 +132,7 @@ export function renderInboxPage() {
         color: var(--text-soft);
       }
 
-      .field input,
+      .field input:not([type="checkbox"]):not([type="radio"]) ,
       .field textarea,
       .field select {
         width: 100%;
@@ -1102,6 +1102,10 @@ export function renderInboxPage() {
         margin-top: 12px;
       }
 
+      .compose-modal .modal-card {
+        width: min(640px, 100%);
+      }
+
       @media (max-width: 1360px) {
         .shell {
           grid-template-columns: 180px 280px minmax(520px, 1fr);
@@ -1189,6 +1193,7 @@ export function renderInboxPage() {
                 <span>⌕</span>
                 <input id="message-search" placeholder="Search mail" />
               </label>
+              <button class="primary-button" id="compose-button" type="button" style="width:auto;padding:9px 14px;border-radius:10px;font-size:13px;box-shadow:none;">✎ Compose</button>
             </div>
 
             <div class="list-head">
@@ -1294,6 +1299,53 @@ export function renderInboxPage() {
           </div>
         </div>
       </div>
+
+      <div class="modal compose-modal" id="compose-modal" aria-hidden="true">
+        <div class="modal-card">
+          <div class="modal-header">
+            <div>
+              <h2>New Message</h2>
+            </div>
+            <button class="tiny-button" id="close-compose-button" type="button">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="field" style="margin-bottom:0;">
+              <label for="compose-from">From</label>
+              <select id="compose-from"></select>
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label for="compose-to">To</label>
+              <input id="compose-to" type="text" placeholder="recipient@example.com" />
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label for="compose-cc">Cc</label>
+              <input id="compose-cc" type="text" placeholder="cc@example.com, another@example.com" />
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label for="compose-bcc">Bcc</label>
+              <input id="compose-bcc" type="text" placeholder="bcc@example.com" />
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label for="compose-subject">Subject</label>
+              <input id="compose-subject" type="text" placeholder="Subject" />
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label for="compose-text">Message</label>
+              <textarea id="compose-text" rows="8" placeholder="Type your message here..."></textarea>
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label for="compose-attachments">Attachments</label>
+              <input id="compose-attachments" type="file" multiple />
+              <div class="attachment-list empty" id="compose-attachments-list">No files selected.</div>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+              <button class="secondary-button" id="compose-cancel-button" type="button" style="width:auto;">Cancel</button>
+              <button class="primary-button" id="compose-send-button" type="button" data-loading-label="Sending..." style="width:auto;">Send</button>
+            </div>
+            <p class="status" id="compose-status"></p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -1319,6 +1371,7 @@ export function renderInboxPage() {
           { id: "fld_inbox", name: "Inbox", kind: "system" },
         ]))},
         selectedAdminMailboxIds: [],
+        composeOpen: false,
       };
 
       const els = {
@@ -1366,6 +1419,20 @@ export function renderInboxPage() {
         runCloudflareSyncButton: document.getElementById("run-cloudflare-sync-button"),
         cloudflareSyncStatus: document.getElementById("cloudflare-sync-status"),
         cloudflareSyncResults: document.getElementById("cloudflare-sync-results"),
+        composeButton: document.getElementById("compose-button"),
+        composeModal: document.getElementById("compose-modal"),
+        composeFrom: document.getElementById("compose-from"),
+        composeTo: document.getElementById("compose-to"),
+        composeCc: document.getElementById("compose-cc"),
+        composeBcc: document.getElementById("compose-bcc"),
+        composeSubject: document.getElementById("compose-subject"),
+        composeText: document.getElementById("compose-text"),
+        composeAttachments: document.getElementById("compose-attachments"),
+        composeAttachmentsList: document.getElementById("compose-attachments-list"),
+        composeSendButton: document.getElementById("compose-send-button"),
+        composeCancelButton: document.getElementById("compose-cancel-button"),
+        composeStatus: document.getElementById("compose-status"),
+        closeComposeButton: document.getElementById("close-compose-button"),
       };
 
       function escapeHtml(value) {
@@ -1611,6 +1678,39 @@ export function renderInboxPage() {
       function closeSettingsModal() {
         els.settingsModal.classList.remove("visible");
         els.settingsModal.setAttribute("aria-hidden", "true");
+      }
+
+      function openComposeModal() {
+        state.composeOpen = true;
+        els.composeModal.classList.add("visible");
+        els.composeModal.setAttribute("aria-hidden", "false");
+        renderComposeFromOptions();
+      }
+
+      function closeComposeModal() {
+        state.composeOpen = false;
+        els.composeModal.classList.remove("visible");
+        els.composeModal.setAttribute("aria-hidden", "true");
+        resetComposeForm();
+      }
+
+      function resetComposeForm() {
+        els.composeFrom.innerHTML = "";
+        els.composeTo.value = "";
+        els.composeCc.value = "";
+        els.composeBcc.value = "";
+        els.composeSubject.value = "";
+        els.composeText.value = "";
+        els.composeAttachments.value = "";
+        els.composeAttachmentsList.className = "attachment-list empty";
+        els.composeAttachmentsList.textContent = "No files selected.";
+        setStatus(els.composeStatus, "");
+      }
+
+      function renderComposeFromOptions() {
+        els.composeFrom.innerHTML = state.mailboxes.map((mailbox) =>
+          '<option value="' + escapeHtml(mailbox.id) + '">' + escapeHtml(mailbox.full_address) + '</option>'
+        ).join("");
       }
 
       async function boot() {
@@ -2183,6 +2283,70 @@ export function renderInboxPage() {
       els.settingsModal.addEventListener("click", (event) => {
         if (event.target === els.settingsModal) {
           closeSettingsModal();
+        }
+      });
+
+      els.composeButton.addEventListener("click", openComposeModal);
+      els.closeComposeButton.addEventListener("click", closeComposeModal);
+      els.composeCancelButton.addEventListener("click", closeComposeModal);
+      els.composeModal.addEventListener("click", (event) => {
+        if (event.target === els.composeModal) {
+          closeComposeModal();
+        }
+      });
+
+      els.composeAttachments.addEventListener("change", () => {
+        const files = Array.from(els.composeAttachments.files || []);
+        els.composeAttachmentsList.className = "attachment-list" + (files.length ? "" : " empty");
+        els.composeAttachmentsList.innerHTML = files.length
+          ? files.map((file) =>
+              '<div class="attachment-item"><strong>' + escapeHtml(file.name) + '</strong><span>' + escapeHtml(formatFileSize(file.size)) + '</span></div>',
+            ).join("")
+          : "No files selected.";
+      });
+
+      els.composeSendButton.addEventListener("click", async () => {
+        const mailboxId = els.composeFrom.value;
+        const to = els.composeTo.value.trim();
+        const cc = els.composeCc.value.trim();
+        const bcc = els.composeBcc.value.trim();
+        const subject = els.composeSubject.value.trim();
+        const textBody = els.composeText.value.trim();
+        const attachments = Array.from(els.composeAttachments.files || []);
+
+        if (!to && !cc && !bcc) {
+          setStatus(els.composeStatus, "At least one recipient is required.", "error");
+          return;
+        }
+        if (!textBody && attachments.length === 0) {
+          setStatus(els.composeStatus, "Please enter a message or attach a file.", "error");
+          return;
+        }
+
+        const form = new FormData();
+        form.set("mailboxId", mailboxId);
+        form.set("to", to);
+        form.set("cc", cc);
+        form.set("bcc", bcc);
+        form.set("subject", subject);
+        form.set("textBody", textBody);
+        for (const file of attachments) {
+          form.append("attachments", file);
+        }
+
+        try {
+          setStatus(els.composeStatus, "Sending...");
+          setButtonLoading(els.composeSendButton, true);
+          await api("/api/messages/send", { method: "POST", body: form });
+          setStatus(els.composeStatus, "Message sent.", "success");
+          showToast("Message sent.", "success");
+          closeComposeModal();
+          await loadWorkspace();
+        } catch (error) {
+          setStatus(els.composeStatus, error.message, "error");
+          showToast(error.message, "error");
+        } finally {
+          setButtonLoading(els.composeSendButton, false);
         }
       });
 

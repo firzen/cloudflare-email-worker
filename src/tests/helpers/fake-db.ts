@@ -89,6 +89,7 @@ export function createFakeDb(fixtures: Fixtures) {
               return runFirstQuery<T>(
                 sql,
                 params,
+                mailboxes,
                 folders,
                 permissions,
                 messages,
@@ -167,11 +168,24 @@ function runAllQuery(
 function runFirstQuery<T>(
   sql: string,
   params: unknown[],
+  mailboxes: MailboxRow[],
   folders: FolderRow[],
   permissions: PermissionRow[],
   messages: MessageRow[],
   outboundMessages: OutboundMessageRow[],
 ) {
+  if (sql.includes("FROM mailboxes")) {
+    const [mailboxId, userId] = params;
+    const allowedMailboxIds = new Set(
+      permissions
+        .filter((p) => p.user_id === String(userId))
+        .filter((p) => ["reply", "manage"].includes(p.permission))
+        .map((p) => p.mailbox_id),
+    );
+    const mailbox = mailboxes.find((row) => row.id === mailboxId && allowedMailboxIds.has(row.id));
+    return (mailbox ?? null) as T | null;
+  }
+
   if (sql.includes("FROM folders")) {
     const [folderId] = params;
     const folder = folders.find((row) => row.id === folderId);
