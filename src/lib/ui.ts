@@ -245,7 +245,7 @@ export function renderInboxPage() {
 
       .shell {
         display: grid;
-        grid-template-columns: 196px 320px minmax(620px, 1fr);
+        grid-template-columns: 220px 320px minmax(620px, 1fr);
         height: calc(100vh - 32px);
         background: rgba(255, 255, 255, 0.72);
         border: 1px solid rgba(214, 220, 229, 0.9);
@@ -271,7 +271,7 @@ export function renderInboxPage() {
         display: grid;
         grid-template-rows: auto auto 1fr auto;
         gap: 12px;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .sidebar-top {
@@ -321,6 +321,13 @@ export function renderInboxPage() {
       .folder-list {
         display: grid;
         gap: 2px;
+        padding: 2px 6px 4px 2px;
+      }
+
+      .sidebar-scroll {
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
         padding-right: 2px;
       }
 
@@ -381,15 +388,18 @@ export function renderInboxPage() {
 
       .footer-user {
         border-top: 1px solid var(--line);
-        padding: 10px 8px 0;
+        padding: 12px 10px 2px;
         display: grid;
         gap: 10px;
+        min-width: 0;
+        background: linear-gradient(180deg, rgba(243, 245, 248, 0.15) 0%, #f3f5f8 28%);
       }
 
       .footer-user-main {
         display: flex;
         align-items: center;
         gap: 10px;
+        min-width: 0;
       }
 
       .avatar {
@@ -1124,13 +1134,13 @@ export function renderInboxPage() {
 
       @media (max-width: 1360px) {
         .shell {
-          grid-template-columns: 180px 280px minmax(520px, 1fr);
+          grid-template-columns: 204px 280px minmax(520px, 1fr);
         }
       }
 
       @media (max-width: 1040px) {
         .shell {
-          grid-template-columns: 180px 1fr;
+          grid-template-columns: 204px 1fr;
         }
 
         .message-pane {
@@ -1186,7 +1196,7 @@ export function renderInboxPage() {
 
             <div class="sidebar-search">Shared inbox</div>
 
-            <div style="overflow:auto;padding-right:2px;min-height:0;">
+            <div class="sidebar-scroll">
               <div class="section-title">Folders</div>
               <div class="folder-list" id="folder-list"></div>
             </div>
@@ -1671,6 +1681,14 @@ export function renderInboxPage() {
         return folder ? folder.name : "All";
       }
 
+      function unreadCountForFolder(folderId = null) {
+        return normalizedInboundMessages().filter((message) => {
+          if (message.is_read) return false;
+          if (folderId === null) return true;
+          return message.folder_id === folderId;
+        }).length;
+      }
+
       function setSelectedMessage(item) {
         state.selectedMessageId = item ? item.id : null;
         state.selectedMessageType = item ? item.message_type : "inbound";
@@ -1830,11 +1848,12 @@ export function renderInboxPage() {
 
       function renderSidebar() {
         const items = ${sortFoldersForSidebar.toString()}(state.folders);
+        const allUnreadCount = unreadCountForFolder();
         const allRow = '' +
           '<button class="folder-row' + (state.selectedFolderId === null ? " active" : "") + '" type="button" data-folder-id="__all__">' +
             '<span class="folder-icon">◎</span>' +
             '<span class="folder-name" title="All">All</span>' +
-            '<span class="folder-kind">ALL</span>' +
+            '<span class="folder-kind">' + escapeHtml(allUnreadCount) + '</span>' +
           '</button>';
 
         if (!items.length) {
@@ -1842,12 +1861,12 @@ export function renderInboxPage() {
         } else {
           els.folderList.innerHTML = items.map((folder) => {
           const active = folder.id === state.selectedFolderId ? " active" : "";
-          const kind = escapeHtml(folder.kind || "custom");
+          const unreadCount = unreadCountForFolder(folder.id);
           return '' +
             '<button class="folder-row' + active + '" type="button" data-folder-id="' + escapeHtml(folder.id) + '">' +
               '<span class="folder-icon">☰</span>' +
               '<span class="folder-name" title="' + escapeHtml(folder.name) + '">' + escapeHtml(folder.name) + '</span>' +
-              '<span class="folder-kind">' + kind.slice(0, 3) + '</span>' +
+              '<span class="folder-kind">' + escapeHtml(unreadCount) + '</span>' +
             '</button>';
           }).join("") + allRow;
         }
