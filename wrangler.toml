@@ -1,0 +1,28 @@
+name = "cloudflare-email-inbox"
+main = "src/index.ts"
+compatibility_date = "2026-06-06"
+
+[vars]
+CLOUDFLARE_ACCOUNT_ID = "f7f2db0274699dfc52b10c317c466b31"
+CLOUDFLARE_WORKER_NAME = "cloudflare-email-inbox"
+BOOTSTRAP_ADMIN_USER_ID = "usr_bootstrap_admin"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cloudflare-email-inbox-db-20260608"
+database_id = "3141dd50-963a-49c2-831f-440629546f3a"
+
+[[kv_namespaces]]
+binding = "APP_SESSIONS"
+id = "5b402eb7aa644375977101c401def269"
+
+[[send_email]]
+name = "EMAIL"
+
+[[r2_buckets]]
+binding = "RAW_EMAILS"
+bucket_name = "cloudflare-email-inbox-raw-20260608"
+
+[[r2_buckets]]
+binding = "ATTACHMENTS"
+bucket_name = "cloudflare-email-inbox-attachments-20260608"
