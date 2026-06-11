@@ -2,6 +2,10 @@
 
 A Cloudflare-native multi-domain inbox MVP built with Workers, D1, R2, and Email Routing.
 
+Operator notes for this machine and recent deployment state:
+
+- [docs/local-operator-notes.md](/Users/firzen/Documents/cloudflare-email-worker/docs/local-operator-notes.md)
+
 ## What Works
 
 - Inbound email persistence from Email Workers into `R2` and `D1`
