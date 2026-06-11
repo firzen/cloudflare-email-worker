@@ -1,0 +1,2 @@
+DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=replace_me
+DINGTALK_SECRET=SECreplace_me

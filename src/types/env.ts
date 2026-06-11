@@ -29,6 +29,8 @@ export type Env = {
   ATTACHMENTS: R2Bucket;
   APP_SESSIONS: KVNamespace;
   APP_SECRET: string;
+  DINGTALK_WEBHOOK?: string;
+  DINGTALK_SECRET?: string;
   EMAIL: EmailSender;
   CLOUDFLARE_ACCOUNT_ID: string;
   CLOUDFLARE_API_TOKEN: string;

@@ -1,4 +1,5 @@
-import { Hono } from "hono";
+import { Context, Hono } from "hono";
+import { getExecutionContextOrNull, scheduleExceptionReport } from "../lib/alerts";
 import { firstRow, runStatement } from "../lib/db";
 import type { Env } from "../types/env";
 import { createId } from "../lib/id";
@@ -12,6 +13,22 @@ type AppVariables = {
 };
 
 export const messagesRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
+
+function reportMessagesException(
+  c: Context<{ Bindings: Env; Variables: AppVariables }>,
+  error: unknown,
+  step: string,
+  details?: Record<string, unknown>,
+) {
+  scheduleExceptionReport(c.env, getExecutionContextOrNull(c), error, {
+    source: "messages-route",
+    method: c.req.method,
+    path: new URL(c.req.url).pathname,
+    userId: c.get("userId"),
+    step,
+    details: details ?? null,
+  });
+}
 
 function unauthorizedResponse() {
   return {
@@ -28,6 +45,27 @@ function messageNotFoundResponse() {
 function folderNotFoundResponse() {
   return {
     error: { code: "FOLDER_NOT_FOUND", message: "Folder not found." },
+  } as const;
+}
+
+function invalidPermanentDeleteResponse() {
+  return {
+    error: {
+      code: "MESSAGE_NOT_IN_DELETED",
+      message: "Only messages in Deleted can be permanently deleted.",
+    },
+  } as const;
+}
+
+function permanentDeleteInternalErrorResponse(step: string, error: unknown) {
+  const details = error instanceof Error ? error.message : "Unknown permanent delete error.";
+  return {
+    error: {
+      code: "PERMANENT_DELETE_FAILED",
+      message: "Message could not be permanently deleted.",
+      step,
+      details,
+    },
   } as const;
 }
 
@@ -116,6 +154,32 @@ async function findManageableMessageForUser(db: D1Database, id: string, userId: 
     db,
     `
       SELECT id
+      FROM messages
+      WHERE id = ?
+        AND deleted_at IS NULL
+        AND mailbox_id IN (
+          SELECT mailbox_id
+          FROM user_mailbox_permissions
+          WHERE user_id = ?
+            AND permission = 'manage'
+        )
+    `,
+    id,
+    userId,
+  );
+}
+
+type PermanentlyDeletableMessageRow = {
+  id: string;
+  folder_id: string;
+  raw_r2_key: string;
+};
+
+async function findPermanentlyDeletableMessageForUser(db: D1Database, id: string, userId: string) {
+  return firstRow<PermanentlyDeletableMessageRow>(
+    db,
+    `
+      SELECT id, folder_id, raw_r2_key
       FROM messages
       WHERE id = ?
         AND deleted_at IS NULL
@@ -749,6 +813,96 @@ messagesRouter.post("/:id/delete", async (c) => {
   return c.json({ ok: true });
 });
 
+messagesRouter.post("/:id/permanent-delete", async (c) => {
+  const userId = c.get("userId");
+
+  if (!userId) {
+    return c.json(unauthorizedResponse(), 401);
+  }
+
+  const id = c.req.param("id");
+  const message = await findPermanentlyDeletableMessageForUser(c.env.DB, id, userId);
+
+  if (!message) {
+    return c.json(messageNotFoundResponse(), 404);
+  }
+
+  if (message.folder_id !== "fld_deleted") {
+    return c.json(invalidPermanentDeleteResponse(), 400);
+  }
+
+  let attachmentsResult;
+  try {
+    attachmentsResult = await c.env.DB.prepare(
+      `
+        SELECT r2_key
+        FROM message_attachments
+        WHERE message_id = ?
+      `,
+    )
+      .bind(id)
+      .all<{ r2_key: string }>();
+  } catch (error) {
+    reportMessagesException(c, error, "permanent_delete.load_attachments", { messageId: id });
+    return c.json(permanentDeleteInternalErrorResponse("load_attachments", error), 500);
+  }
+
+  try {
+    await runStatement(
+      c.env.DB,
+      `
+        DELETE FROM audit_logs
+        WHERE message_id = ?
+      `,
+      id,
+    );
+
+    await runStatement(
+      c.env.DB,
+      `
+        DELETE FROM message_attachments
+        WHERE message_id = ?
+      `,
+      id,
+    );
+
+    await runStatement(
+      c.env.DB,
+      `
+        DELETE FROM messages
+        WHERE id = ?
+          AND deleted_at IS NULL
+      `,
+      id,
+    );
+  } catch (error) {
+    reportMessagesException(c, error, "permanent_delete.delete_records", { messageId: id });
+    return c.json(permanentDeleteInternalErrorResponse("delete_records", error), 500);
+  }
+
+  const cleanupTargets = [
+    message.raw_r2_key,
+    ...(attachmentsResult.results ?? []).map((attachment) => attachment.r2_key),
+  ].filter(Boolean);
+
+  const cleanupResults = await Promise.allSettled(
+    cleanupTargets.map((key, index) =>
+      index === 0 ? c.env.RAW_EMAILS.delete(key) : c.env.ATTACHMENTS.delete(key),
+    ),
+  );
+
+  cleanupResults.forEach((result) => {
+    if (result.status === "rejected") {
+      console.error("Permanent delete storage cleanup failed.", result.reason);
+      reportMessagesException(c, result.reason, "permanent_delete.cleanup_storage", {
+        messageId: id,
+      });
+    }
+  });
+
+  return c.json({ ok: true });
+});
+
 messagesRouter.post("/:id/move", async (c) => {
   const userId = c.get("userId");
 
@@ -804,6 +958,7 @@ messagesRouter.post("/send", async (c) => {
   try {
     sendReq = await parseSendRequest(c.req.raw);
   } catch (error) {
+    reportMessagesException(c, error, "send.parse_request");
     return c.json(sendInternalErrorResponse("parse_request", error), 500);
   }
 
@@ -906,6 +1061,10 @@ messagesRouter.post("/send", async (c) => {
       null,
     );
   } catch (error) {
+    reportMessagesException(c, error, "send.prepare_outbound", {
+      mailboxId: mailbox.id,
+      outboundMessageId,
+    });
     return c.json(sendInternalErrorResponse("prepare_outbound", error), 500);
   }
 
@@ -918,6 +1077,9 @@ messagesRouter.post("/send", async (c) => {
       sendReq.attachments,
     );
   } catch (error) {
+    reportMessagesException(c, error, "send.persist_attachments", {
+      outboundMessageId,
+    });
     return c.json(sendInternalErrorResponse("persist_attachments", error), 500);
   }
 
@@ -945,6 +1107,11 @@ messagesRouter.post("/send", async (c) => {
     providerResult = await c.env.EMAIL.send(emailPayload);
   } catch (error) {
     const details = error instanceof Error ? error.message : "Unknown email provider error.";
+    reportMessagesException(c, error, "send.provider_send", {
+      outboundMessageId,
+      mailboxId: mailbox.id,
+      recipientCount: allRecipients.length,
+    });
     await runStatement(
       c.env.DB,
       `
@@ -1013,6 +1180,10 @@ messagesRouter.post("/send", async (c) => {
       }),
     );
   } catch (error) {
+    reportMessagesException(c, error, "send.persist_sent", {
+      outboundMessageId,
+      providerMessageId,
+    });
     return c.json(sendInternalErrorResponse("persist_sent", error), 500);
   }
 
@@ -1037,6 +1208,7 @@ messagesRouter.post("/:id/reply", async (c) => {
   try {
     reply = await parseSendRequest(c.req.raw);
   } catch (error) {
+    reportMessagesException(c, error, "reply.parse_request", { messageId: id });
     return c.json(replyInternalErrorResponse("parse_request", error), 500);
   }
 
@@ -1098,6 +1270,10 @@ messagesRouter.post("/:id/reply", async (c) => {
       null,
     );
   } catch (error) {
+    reportMessagesException(c, error, "reply.prepare_outbound", {
+      messageId: id,
+      outboundMessageId,
+    });
     return c.json(replyInternalErrorResponse("prepare_outbound", error), 500);
   }
 
@@ -1110,6 +1286,10 @@ messagesRouter.post("/:id/reply", async (c) => {
       reply.attachments,
     );
   } catch (error) {
+    reportMessagesException(c, error, "reply.persist_attachments", {
+      messageId: id,
+      outboundMessageId,
+    });
     return c.json(replyInternalErrorResponse("persist_attachments", error), 500);
   }
 
@@ -1127,6 +1307,10 @@ messagesRouter.post("/:id/reply", async (c) => {
     });
   } catch (error) {
     const details = error instanceof Error ? error.message : "Unknown email provider error.";
+    reportMessagesException(c, error, "reply.provider_send", {
+      messageId: id,
+      outboundMessageId,
+    });
     await runStatement(
       c.env.DB,
       `

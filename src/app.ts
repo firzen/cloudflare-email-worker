@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { parseSessionCookie } from "./lib/auth";
+import { getExecutionContextOrNull, scheduleExceptionReport } from "./lib/alerts";
 import { parseCookieHeader } from "./lib/http";
 import { renderInboxPage } from "./lib/ui";
 import { auditRouter } from "./routes/audit";
@@ -23,6 +24,25 @@ app.use("*", async (c, next) => {
 
   c.set("userId", userId);
   await next();
+});
+
+app.onError((error, c) => {
+  scheduleExceptionReport(c.env, getExecutionContextOrNull(c), error, {
+    source: "http",
+    method: c.req.method,
+    path: new URL(c.req.url).pathname,
+    userId: c.get("userId"),
+  });
+
+  return c.json(
+    {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Internal server error.",
+      },
+    },
+    500,
+  );
 });
 
 app.get("/", (c) => c.html(renderInboxPage()));

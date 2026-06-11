@@ -87,6 +87,11 @@ export const inboxPageMessagesScript = String.raw`
         return folder ? folder.name : "All";
       }
 
+      function canManageMailbox(mailboxId) {
+        const mailbox = state.mailboxes.find((item) => item.id === mailboxId);
+        return Boolean(mailbox && Array.isArray(mailbox.permissions) && mailbox.permissions.includes("manage"));
+      }
+
       function unreadCountForFolder(folderId = null) {
         return normalizedInboundMessages().filter((message) => {
           if (message.is_read) return false;
@@ -189,13 +194,17 @@ export const inboxPageMessagesScript = String.raw`
 
       function setDetailActions(item) {
         const isInbound = Boolean(item) && item.messageType !== "outbound";
+        const isDeletedFolderMessage = isInbound && item.folderId === "fld_deleted";
+        const canManage = isInbound && canManageMailbox(item.mailboxId);
         els.markReadButton.style.display = isInbound ? "inline-flex" : "none";
         els.moveFolderSelect.style.display = isInbound ? "inline-flex" : "none";
         els.moveButton.style.display = isInbound ? "inline-flex" : "none";
-        els.deleteButton.style.display = isInbound ? "grid" : "none";
+        els.deleteButton.style.display = isInbound && canManage ? "grid" : "none";
+        els.permanentDeleteButton.style.display = isDeletedFolderMessage && canManage ? "inline-flex" : "none";
 
         if (isInbound) {
           els.markReadButton.textContent = item.isRead ? "Mark unread" : "Mark read";
+          els.deleteButton.textContent = "⌫";
         }
       }
 
@@ -275,18 +284,26 @@ export const inboxPageMessagesScript = String.raw`
             ? '<p class="status" id="detail-status"></p>'
             : '<section class="reply-box">' +
                 '<h3>Reply</h3>' +
+                '<div class="compact-form">' +
                 '<div class="field">' +
                   '<label for="reply-subject">Subject</label>' +
-                  '<input id="reply-subject" value="' + escapeHtml(defaultReplySubject(item.subject || "")) + '">' +
+                  '<div class="field-control">' +
+                    '<input id="reply-subject" value="' + escapeHtml(defaultReplySubject(item.subject || "")) + '">' +
+                  '</div>' +
                 '</div>' +
-                '<div class="field">' +
+                '<div class="field field-multiline">' +
                   '<label for="reply-text">Plain text</label>' +
-                  '<textarea id="reply-text"></textarea>' +
+                  '<div class="field-control">' +
+                    '<textarea id="reply-text" rows="5"></textarea>' +
+                  '</div>' +
                 '</div>' +
-                '<div class="field">' +
+                '<div class="field field-multiline">' +
                   '<label for="reply-attachments">Attachments</label>' +
-                  '<input id="reply-attachments" type="file" multiple>' +
-                  '<div class="attachment-list empty" id="reply-attachments-list">No files selected.</div>' +
+                  '<div class="field-control">' +
+                    '<input id="reply-attachments" type="file" multiple>' +
+                    '<div class="attachment-list empty" id="reply-attachments-list">No files selected.</div>' +
+                  '</div>' +
+                '</div>' +
                 '</div>' +
                 '<div class="reply-box-actions">' +
                   '<button class="primary-button" id="reply-button" type="button" data-loading-label="Sending..." style="width:auto;">Send reply</button>' +
@@ -369,6 +386,19 @@ export const inboxPageMessagesScript = String.raw`
         const item = state.selectedMessageDetail;
         if (!item || item.messageType === "outbound") return;
         await runMessageAction("/api/messages/" + encodeURIComponent(item.id) + "/delete", { method: "POST" }, "Moved to Deleted.", els.deleteButton);
+      });
+
+      els.permanentDeleteButton.addEventListener("click", async () => {
+        const item = state.selectedMessageDetail;
+        if (!item || item.messageType === "outbound" || item.folderId !== "fld_deleted") return;
+        const confirmed = window.confirm("Permanently delete this email? This cannot be undone.");
+        if (!confirmed) return;
+        await runMessageAction(
+          "/api/messages/" + encodeURIComponent(item.id) + "/permanent-delete",
+          { method: "POST" },
+          "Message permanently deleted.",
+          els.permanentDeleteButton,
+        );
       });
 
       els.messageSearch.addEventListener("input", async () => {

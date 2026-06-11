@@ -1,4 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+
+const { scheduleExceptionReport } = vi.hoisted(() => ({
+  scheduleExceptionReport: vi.fn(),
+}));
+
+vi.mock("../lib/alerts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/alerts")>();
+  return {
+    ...actual,
+    scheduleExceptionReport,
+  };
+});
+
 import { app } from "../app";
 import { createSessionCookie } from "../lib/auth";
 
@@ -382,5 +395,47 @@ describe("users api", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("queues a DingTalk alert self-test for admins", async () => {
+    const cookie = await createSessionCookie("usr_admin", "secret");
+    const executionCtx = {
+      waitUntil: vi.fn(),
+    } as unknown as ExecutionContext;
+    const db = createAdminGatePrepare({});
+
+    const res = await app.request(
+      "/api/users/alert-test",
+      {
+        method: "POST",
+        headers: { cookie: `session=${cookie}` },
+      },
+      {
+        APP_SECRET: "secret",
+        DB: db,
+        DINGTALK_WEBHOOK: "https://example.com/robot/send?access_token=test",
+      },
+      executionCtx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      message: "Alert test queued.",
+    });
+    expect(scheduleExceptionReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        DINGTALK_WEBHOOK: "https://example.com/robot/send?access_token=test",
+      }),
+      executionCtx,
+      expect.any(Error),
+      expect.objectContaining({
+        source: "alert-test",
+        method: "POST",
+        path: "/api/users/alert-test",
+        userId: "usr_admin",
+        step: "manual_self_test",
+      }),
+    );
   });
 });

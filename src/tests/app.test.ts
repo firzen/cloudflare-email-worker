@@ -1,5 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const { scheduleExceptionReport } = vi.hoisted(() => ({
+  scheduleExceptionReport: vi.fn(),
+}));
+
+vi.mock("../lib/alerts", () => ({
+  getExecutionContextOrNull: vi.fn((context) => context.executionCtx),
+  scheduleExceptionReport,
+}));
+
 import { app } from "../app";
+
+app.get("/__test/error", () => {
+  throw new Error("boom");
+});
 
 describe("app", () => {
   it("responds to health checks", async () => {
@@ -55,6 +69,8 @@ describe("app", () => {
     expect(body).toContain("showToast(");
     expect(body).toContain("renderDetailLoading()");
     expect(body).toContain("detail-view loading");
+    expect(body).toContain('id="permanent-delete-button"');
+    expect(body).toContain('"/permanent-delete"');
     expect(body).toContain("border-top: 1px solid rgba(227, 231, 238, 0.7);");
     expect(body).not.toContain("margin: 4px 8px;");
     expect(body).not.toContain("box-shadow: 0 16px 28px rgba(61, 125, 246, 0.18);");
@@ -69,5 +85,40 @@ describe("app", () => {
     expect(body).not.toContain("Details");
     expect(body).not.toContain("id=\"detail-summary\"");
     expect(body).not.toContain("id=\"admin-panel\"");
+  });
+
+  it("reports unhandled route errors and returns a 500 response", async () => {
+    const executionCtx = {
+      waitUntil: vi.fn(),
+    } as unknown as ExecutionContext;
+
+    const res = await app.fetch(
+      new Request("https://example.com/__test/error"),
+      {
+        APP_SECRET: "secret",
+        DINGTALK_WEBHOOK: "https://example.com/robot/send?access_token=test",
+      } as any,
+      executionCtx,
+    );
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Internal server error.",
+      },
+    });
+    expect(scheduleExceptionReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        DINGTALK_WEBHOOK: "https://example.com/robot/send?access_token=test",
+      }),
+      executionCtx,
+      expect.any(Error),
+      expect.objectContaining({
+        source: "http",
+        method: "GET",
+        path: "/__test/error",
+      }),
+    );
   });
 });

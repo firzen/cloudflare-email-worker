@@ -15,8 +15,9 @@ describe("mailboxes api", () => {
 
   it("returns mailbox rows for authenticated users", async () => {
     const rows = [
-      { id: "mbx_sales", full_address: "sales@example.com" },
-      { id: "mbx_support", full_address: "support@example.com" },
+      { id: "mbx_sales", full_address: "sales@example.com", permission: "read" },
+      { id: "mbx_sales", full_address: "sales@example.com", permission: "reply" },
+      { id: "mbx_support", full_address: "support@example.com", permission: "manage" },
     ];
     const all = vi.fn(async () => ({ results: rows }));
     const bind = vi.fn(() => ({ all }));
@@ -33,12 +34,18 @@ describe("mailboxes api", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ items: rows });
-    expect(preparedSql).toContain("SELECT id, full_address");
+    expect(await res.json()).toEqual({
+      items: [
+        { id: "mbx_sales", full_address: "sales@example.com", permissions: ["read", "reply"] },
+        { id: "mbx_support", full_address: "support@example.com", permissions: ["manage"] },
+      ],
+    });
+    expect(preparedSql).toContain("SELECT");
     expect(preparedSql).toContain("FROM mailboxes");
+    expect(preparedSql).toContain("INNER JOIN user_mailbox_permissions");
     expect(preparedSql).toContain("FROM user_mailbox_permissions");
     expect(preparedSql).toContain("ORDER BY");
-    expect(bind).toHaveBeenCalledWith("usr_1");
+    expect(bind).toHaveBeenCalledWith("usr_1", "usr_1");
     expect(all).toHaveBeenCalledTimes(1);
   });
 
@@ -59,7 +66,7 @@ describe("mailboxes api", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      items: [{ id: "mbx_support", full_address: "support@example.com" }],
+      items: [{ id: "mbx_support", full_address: "support@example.com", permissions: ["reply"] }],
     });
   });
 

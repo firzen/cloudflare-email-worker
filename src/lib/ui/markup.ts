@@ -75,6 +75,7 @@ export const inboxPageMarkup = String.raw`
               </div>
               <div class="toolbar-group" style="margin-left:auto;">
                 <button class="tiny-button" type="button" id="delete-button">⌫</button>
+                <button class="toolbar-button" type="button" id="permanent-delete-button" style="display:none;">Delete forever</button>
               </div>
             </div>
 
@@ -141,37 +142,49 @@ export const inboxPageMarkup = String.raw`
               <section class="modal-section" id="permissions-section">
                 <h3>User Editor</h3>
                 <p>Edit profile details and mailbox permissions for the selected user. New users are created here too.</p>
-                <div class="form-grid">
-                  <div class="field" style="margin-bottom:0;">
+                <div class="form-grid compact-form">
+                  <div class="field">
                     <label for="user-name-input">Name</label>
-                    <input id="user-name-input" type="text" placeholder="Full name" />
+                    <div class="field-control">
+                      <input id="user-name-input" type="text" placeholder="Full name" />
+                    </div>
                   </div>
-                  <div class="field" style="margin-bottom:0;">
+                  <div class="field">
                     <label for="user-email-input">Email</label>
-                    <input id="user-email-input" type="email" placeholder="name@example.com" />
+                    <div class="field-control">
+                      <input id="user-email-input" type="email" placeholder="name@example.com" />
+                    </div>
                   </div>
-                  <div class="field" style="margin-bottom:0;">
+                  <div class="field">
                     <label for="user-role-input">Role</label>
-                    <select id="user-role-input">
-                      <option value="operator">operator</option>
-                      <option value="admin">admin</option>
-                    </select>
+                    <div class="field-control">
+                      <select id="user-role-input">
+                        <option value="operator">operator</option>
+                        <option value="admin">admin</option>
+                      </select>
+                    </div>
                   </div>
-                  <div class="field" style="margin-bottom:0;">
+                  <div class="field">
                     <label for="user-status-input">Status</label>
-                    <select id="user-status-input">
-                      <option value="active">active</option>
-                      <option value="disabled">disabled</option>
-                    </select>
+                    <div class="field-control">
+                      <select id="user-status-input">
+                        <option value="active">active</option>
+                        <option value="disabled">disabled</option>
+                      </select>
+                    </div>
                   </div>
-                  <div class="field" style="margin-bottom:0;">
+                  <div class="field">
                     <label for="user-password-input">Password</label>
-                    <input id="user-password-input" type="password" placeholder="Leave blank to keep current password" />
+                    <div class="field-control">
+                      <input id="user-password-input" type="password" placeholder="Leave blank to keep current password" />
+                    </div>
                   </div>
                 </div>
-                <div class="field permission-search" style="margin-bottom:0;">
-                  <label for="permission-search-input">Search mailboxes or domains</label>
-                  <input id="permission-search-input" type="text" placeholder="Search by mailbox or domain" />
+                <div class="field permission-search compact-form-field">
+                  <label for="permission-search-input">Search</label>
+                  <div class="field-control">
+                    <input id="permission-search-input" type="text" placeholder="Search by mailbox or domain" />
+                  </div>
                 </div>
                 <div class="permission-toolbar">
                   <button class="domain-action" id="permission-bulk-read" type="button">Read</button>
@@ -213,39 +226,53 @@ export const inboxPageMarkup = String.raw`
             </div>
             <button class="tiny-button" id="close-compose-button" type="button">✕</button>
           </div>
-          <div class="modal-body">
-            <div class="field" style="margin-bottom:0;">
+          <div class="modal-body compact-form">
+            <div class="field">
               <label>From</label>
-              <div class="compose-from-row">
-                <input id="compose-from-prefix" type="text" placeholder="sam" style="flex:1;" />
-                <span style="color:var(--text-soft);padding:0 4px;">@</span>
-                <select id="compose-from-domain" style="flex:2;"></select>
+              <div class="field-control">
+                <div class="compose-from-row">
+                  <input id="compose-from-prefix" type="text" placeholder="sam" style="flex:1;" />
+                  <span style="color:var(--text-soft);padding:0 4px;">@</span>
+                  <select id="compose-from-domain" style="flex:2;"></select>
+                </div>
               </div>
             </div>
-            <div class="field" style="margin-bottom:0;">
+            <div class="field">
               <label for="compose-to">To</label>
-              <input id="compose-to" type="text" placeholder="recipient@example.com" />
+              <div class="field-control">
+                <input id="compose-to" type="text" placeholder="recipient@example.com" />
+              </div>
             </div>
-            <div class="field" style="margin-bottom:0;">
+            <div class="field">
               <label for="compose-cc">Cc</label>
-              <input id="compose-cc" type="text" placeholder="cc@example.com, another@example.com" />
+              <div class="field-control">
+                <input id="compose-cc" type="text" placeholder="cc@example.com, another@example.com" />
+              </div>
             </div>
-            <div class="field" style="margin-bottom:0;">
+            <div class="field">
               <label for="compose-bcc">Bcc</label>
-              <input id="compose-bcc" type="text" placeholder="bcc@example.com" />
+              <div class="field-control">
+                <input id="compose-bcc" type="text" placeholder="bcc@example.com" />
+              </div>
             </div>
-            <div class="field" style="margin-bottom:0;">
+            <div class="field">
               <label for="compose-subject">Subject</label>
-              <input id="compose-subject" type="text" placeholder="Subject" required />
+              <div class="field-control">
+                <input id="compose-subject" type="text" placeholder="Subject" required />
+              </div>
             </div>
-            <div class="field" style="margin-bottom:0;">
+            <div class="field field-multiline">
               <label for="compose-text">Message</label>
-              <textarea id="compose-text" rows="8" placeholder="Type your message here..."></textarea>
+              <div class="field-control">
+                <textarea id="compose-text" rows="6" placeholder="Type your message here..."></textarea>
+              </div>
             </div>
-            <div class="field" style="margin-bottom:0;">
+            <div class="field field-multiline">
               <label for="compose-attachments">Attachments</label>
-              <input id="compose-attachments" type="file" multiple />
-              <div class="attachment-list empty" id="compose-attachments-list">No files selected.</div>
+              <div class="field-control">
+                <input id="compose-attachments" type="file" multiple />
+                <div class="attachment-list empty" id="compose-attachments-list">No files selected.</div>
+              </div>
             </div>
             <div style="display:flex;gap:10px;justify-content:flex-end;">
               <button class="secondary-button" id="compose-cancel-button" type="button" style="width:auto;">Cancel</button>

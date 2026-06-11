@@ -51,6 +51,7 @@ export const inboxPageCoreScript = String.raw`
         markReadButton: document.getElementById("mark-read-button"),
         moveButton: document.getElementById("move-button"),
         deleteButton: document.getElementById("delete-button"),
+        permanentDeleteButton: document.getElementById("permanent-delete-button"),
         settingsButton: document.getElementById("settings-button"),
         settingsModal: document.getElementById("settings-modal"),
         closeSettingsButton: document.getElementById("close-settings-button"),

@@ -38,6 +38,8 @@ The Worker expects these bindings:
 - `ATTACHMENTS`: R2 bucket for attachments
 - `APP_SESSIONS`: KV namespace placeholder for future session storage
 - `APP_SECRET`: secret used to sign session cookies
+- `DINGTALK_WEBHOOK`: optional DingTalk robot webhook used for exception alerts
+- `DINGTALK_SECRET`: optional DingTalk robot signing secret paired with `DINGTALK_WEBHOOK`
 - `EMAIL`: Cloudflare email sending binding used by the reply endpoint
 - `CLOUDFLARE_ACCOUNT_ID`: account id used by the admin sync action
 - `CLOUDFLARE_API_TOKEN`: API token with zone/email routing/email sending permissions for the admin sync action
@@ -52,6 +54,32 @@ The Worker expects these bindings:
 - Reply uses the original recipient address, supports editable subjects and file attachments, and records outbound/audit metadata, but advanced retry handling is not implemented
 - Domain onboarding is still an operational setup step: Cloudflare Email Routing catch-all rules and matching `domains` / `mailboxes` rows must exist for each domain
 - The login flow expects `users.password_hash` to contain a SHA-256 hex digest of the plaintext password
+
+## DingTalk Exception Alerts
+
+Unhandled HTTP exceptions, inbound email handler failures, and major server-side processing exceptions now send a text alert to a DingTalk custom robot when `DINGTALK_WEBHOOK` is configured.
+
+Local development:
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+Production secrets:
+
+```bash
+wrangler secret put DINGTALK_WEBHOOK
+wrangler secret put DINGTALK_SECRET
+```
+
+Online self-test after deployment:
+
+```bash
+curl -X POST https://your-domain.example.com/api/users/alert-test \
+  -H 'Cookie: session=YOUR_ADMIN_SESSION_COOKIE'
+```
+
+This endpoint is admin-only and queues an intentional DingTalk test alert without returning a 500 response.
 
 ## Key Routes
 

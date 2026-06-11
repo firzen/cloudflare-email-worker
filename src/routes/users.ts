@@ -1,5 +1,9 @@
-import { Hono } from "hono";
+import { Context, Hono } from "hono";
 import { hashPassword } from "../lib/auth";
+import {
+  getExecutionContextOrNull,
+  scheduleExceptionReport,
+} from "../lib/alerts";
 import { createId } from "../lib/id";
 import { firstRow, runStatement } from "../lib/db";
 import { runCloudflareAdminSync } from "../lib/cloudflare/admin-sync";
@@ -46,6 +50,22 @@ type UserPermissionRow = {
   full_address: string;
   permission: string | null;
 };
+
+function reportUsersException(
+  c: Context<{ Bindings: Env; Variables: AppVariables }>,
+  error: unknown,
+  step: string,
+  details?: Record<string, unknown>,
+) {
+  scheduleExceptionReport(c.env, getExecutionContextOrNull(c), error, {
+    source: "users-route",
+    method: c.req.method,
+    path: new URL(c.req.url).pathname,
+    userId: c.get("userId"),
+    step,
+    details: details ?? null,
+  });
+}
 
 async function requireAdmin(db: D1Database, userId: string) {
   const user = await firstRow<{ id: string; role: string }>(
@@ -558,6 +578,7 @@ usersRouter.post("/cloudflare-sync", async (c) => {
     const result = await runCloudflareAdminSync(c.env, adminCheck.userId);
     return c.json(result);
   } catch (error) {
+    reportUsersException(c, error, "cloudflare_sync.start");
     return c.json(
       {
         error: {
@@ -570,6 +591,31 @@ usersRouter.post("/cloudflare-sync", async (c) => {
       500,
     );
   }
+});
+
+usersRouter.post("/alert-test", async (c) => {
+  const adminCheck = await requireAdminUser(c);
+  if (!adminCheck.ok) {
+    return adminCheck.response;
+  }
+
+  const testError = new Error("DingTalk webhook self-test");
+  scheduleExceptionReport(c.env, getExecutionContextOrNull(c), testError, {
+    source: "alert-test",
+    method: c.req.method,
+    path: new URL(c.req.url).pathname,
+    userId: adminCheck.userId,
+    step: "manual_self_test",
+    details: {
+      triggeredBy: "admin",
+      note: "This is an intentional test alert.",
+    },
+  });
+
+  return c.json({
+    ok: true,
+    message: "Alert test queued.",
+  });
 });
 
 export { requireAdmin, unauthorizedResponse, forbiddenResponse };

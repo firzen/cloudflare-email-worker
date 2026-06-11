@@ -538,6 +538,141 @@ describe("messages api", () => {
     expect(messages[0]?.deleted_at).toBeUndefined();
   });
 
+  it("rejects permanent delete for users without manage access", async () => {
+    const messages = [
+      {
+        id: "msg_1",
+        mailbox_id: "mbx_support",
+        folder_id: "fld_deleted",
+        raw_r2_key: "raw/msg_1.eml",
+        from_email: "alice@example.com",
+        to_email: "support@example.net",
+        subject: "Keep out",
+        snippet: null,
+        text_body: null,
+        html_body: null,
+        received_at: "2026-06-06T10:00:00.000Z",
+        is_read: 0,
+      },
+    ];
+    const db = createFakeDb({
+      permissions: [{ user_id: "usr_reader", mailbox_id: "mbx_support", permission: "reply" }],
+      messages,
+    });
+    const cookie = await createSessionCookie("usr_reader", "secret");
+    const res = await app.request(
+      "/api/messages/msg_1/permanent-delete",
+      { method: "POST", headers: { cookie: `session=${cookie}` } },
+      {
+        APP_SECRET: "secret",
+        DB: db,
+        RAW_EMAILS: { delete: vi.fn() },
+        ATTACHMENTS: { delete: vi.fn() },
+      },
+    );
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      error: { code: "MESSAGE_NOT_FOUND", message: "Message not found." },
+    });
+    expect(messages).toHaveLength(1);
+  });
+
+  it("rejects permanent delete when the message is not in Deleted", async () => {
+    const messages = [
+      {
+        id: "msg_1",
+        mailbox_id: "mbx_support",
+        folder_id: "fld_inbox",
+        raw_r2_key: "raw/msg_1.eml",
+        from_email: "alice@example.com",
+        to_email: "support@example.net",
+        subject: "Wrong folder",
+        snippet: null,
+        text_body: null,
+        html_body: null,
+        received_at: "2026-06-06T10:00:00.000Z",
+        is_read: 0,
+      },
+    ];
+    const db = createFakeDb({
+      permissions: [{ user_id: "usr_manager", mailbox_id: "mbx_support", permission: "manage" }],
+      messages,
+    });
+    const cookie = await createSessionCookie("usr_manager", "secret");
+    const res = await app.request(
+      "/api/messages/msg_1/permanent-delete",
+      { method: "POST", headers: { cookie: `session=${cookie}` } },
+      {
+        APP_SECRET: "secret",
+        DB: db,
+        RAW_EMAILS: { delete: vi.fn() },
+        ATTACHMENTS: { delete: vi.fn() },
+      },
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: {
+        code: "MESSAGE_NOT_IN_DELETED",
+        message: "Only messages in Deleted can be permanently deleted.",
+      },
+    });
+    expect(messages).toHaveLength(1);
+  });
+
+  it("permanently deletes a managed message from Deleted and clears storage", async () => {
+    const messages = [
+      {
+        id: "msg_1",
+        mailbox_id: "mbx_support",
+        folder_id: "fld_deleted",
+        raw_r2_key: "raw/msg_1.eml",
+        from_email: "alice@example.com",
+        to_email: "support@example.net",
+        subject: "Delete forever",
+        snippet: null,
+        text_body: null,
+        html_body: null,
+        received_at: "2026-06-06T10:00:00.000Z",
+        is_read: 0,
+      },
+    ];
+    const rawDelete = vi.fn(async () => undefined);
+    const attachmentDelete = vi.fn(async () => undefined);
+    const db = createFakeDb({
+      permissions: [{ user_id: "usr_manager", mailbox_id: "mbx_support", permission: "manage" }],
+      messages,
+      messageAttachments: [
+        {
+          id: "att_1",
+          message_id: "msg_1",
+          filename: "note.txt",
+          content_type: "text/plain",
+          size_bytes: 7,
+          r2_key: "attachments/msg_1/note.txt",
+        },
+      ],
+    });
+    const cookie = await createSessionCookie("usr_manager", "secret");
+    const res = await app.request(
+      "/api/messages/msg_1/permanent-delete",
+      { method: "POST", headers: { cookie: `session=${cookie}` } },
+      {
+        APP_SECRET: "secret",
+        DB: db,
+        RAW_EMAILS: { delete: rawDelete },
+        ATTACHMENTS: { delete: attachmentDelete },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(messages).toHaveLength(0);
+    expect(rawDelete).toHaveBeenCalledWith("raw/msg_1.eml");
+    expect(attachmentDelete).toHaveBeenCalledWith("attachments/msg_1/note.txt");
+  });
+
   it("rejects unauthenticated users for moving a message", async () => {
     const res = await app.request("/api/messages/msg_1/move", {
       method: "POST",

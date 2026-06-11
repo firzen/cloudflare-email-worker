@@ -19,20 +19,37 @@ mailboxesRouter.get("/", async (c) => {
 
   const result = await c.env.DB.prepare(
     `
-      SELECT id, full_address
+      SELECT
+        mailboxes.id,
+        mailboxes.full_address,
+        user_mailbox_permissions.permission
       FROM mailboxes
-      WHERE id IN (
+      INNER JOIN user_mailbox_permissions
+        ON user_mailbox_permissions.mailbox_id = mailboxes.id
+      WHERE mailboxes.id IN (
         SELECT mailbox_id
         FROM user_mailbox_permissions
         WHERE user_id = ?
       )
-      ORDER BY full_address ASC
+        AND user_mailbox_permissions.user_id = ?
+      ORDER BY mailboxes.full_address ASC
     `,
   )
-    .bind(userId)
-    .all();
+    .bind(userId, userId)
+    .all<{ id: string; full_address: string; permission: string }>();
 
-  return c.json({ items: result.results ?? [] });
+  const grouped = new Map<string, { id: string; full_address: string; permissions: string[] }>();
+  for (const row of result.results ?? []) {
+    const current = grouped.get(row.id) ?? {
+      id: row.id,
+      full_address: row.full_address,
+      permissions: [],
+    };
+    current.permissions.push(row.permission);
+    grouped.set(row.id, current);
+  }
+
+  return c.json({ items: Array.from(grouped.values()) });
 });
 
 mailboxesRouter.get("/:id/permissions", async (c) => {

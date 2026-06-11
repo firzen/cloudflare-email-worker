@@ -19,6 +19,7 @@ type MessageRow = {
   id: string;
   mailbox_id: string;
   folder_id: string;
+  raw_r2_key?: string;
   from_email: string;
   to_email: string;
   subject: string;
@@ -28,6 +29,15 @@ type MessageRow = {
   received_at: string;
   is_read: number;
   deleted_at?: string | null;
+};
+
+type MessageAttachmentRow = {
+  id: string;
+  message_id: string;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number;
+  r2_key: string;
 };
 
 type OutboundMessageRow = {
@@ -55,6 +65,7 @@ type Fixtures = {
   folders?: FolderRow[];
   permissions?: PermissionRow[];
   messages?: MessageRow[];
+  messageAttachments?: MessageAttachmentRow[];
   outboundMessages?: OutboundMessageRow[];
   outboundAttachments?: OutboundAttachmentRow[];
 };
@@ -64,6 +75,7 @@ export function createFakeDb(fixtures: Fixtures) {
   const folders = fixtures.folders ?? [];
   const permissions = fixtures.permissions ?? [];
   const messages = fixtures.messages ?? [];
+  const messageAttachments = fixtures.messageAttachments ?? [];
   const outboundMessages = fixtures.outboundMessages ?? [];
   const outboundAttachments = fixtures.outboundAttachments ?? [];
 
@@ -80,6 +92,7 @@ export function createFakeDb(fixtures: Fixtures) {
                   mailboxes,
                   permissions,
                   messages,
+                  messageAttachments,
                   outboundMessages,
                   outboundAttachments,
                 ),
@@ -93,11 +106,12 @@ export function createFakeDb(fixtures: Fixtures) {
                 folders,
                 permissions,
                 messages,
+                messageAttachments,
                 outboundMessages,
               );
             },
             async run() {
-              return runMutation(sql, params, permissions, messages);
+              return runMutation(sql, params, permissions, messages, messageAttachments);
             },
           };
         },
@@ -112,17 +126,34 @@ function runAllQuery(
   mailboxes: MailboxRow[],
   permissions: PermissionRow[],
   messages: MessageRow[],
+  messageAttachments: MessageAttachmentRow[],
   outboundMessages: OutboundMessageRow[],
   outboundAttachments: OutboundAttachmentRow[],
 ) {
   if (sql.includes("FROM mailboxes")) {
     const [userId] = params;
-    const allowedMailboxIds = getAllowedMailboxIds(String(userId), permissions);
+    const permissionRows = permissions
+      .filter((permission) => permission.user_id === String(userId))
+      .sort((left, right) => {
+        const mailboxComparison = left.mailbox_id.localeCompare(right.mailbox_id);
+        if (mailboxComparison !== 0) {
+          return mailboxComparison;
+        }
 
-    return mailboxes
-      .filter((mailbox) => allowedMailboxIds.has(mailbox.id))
-      .sort((left, right) => left.full_address.localeCompare(right.full_address))
-      .map(({ id, full_address }) => ({ id, full_address }));
+        return left.permission.localeCompare(right.permission);
+      });
+
+    return permissionRows
+      .map((permission) => {
+        const mailbox = mailboxes.find((row) => row.id === permission.mailbox_id);
+        if (!mailbox) return null;
+        return {
+          id: mailbox.id,
+          full_address: mailbox.full_address,
+          permission: permission.permission,
+        };
+      })
+      .filter(Boolean);
   }
 
   if (sql.includes("FROM messages")) {
@@ -162,6 +193,13 @@ function runAllQuery(
       .map((attachment) => ({ ...attachment }));
   }
 
+  if (sql.includes("FROM message_attachments")) {
+    const [messageId] = params;
+    return messageAttachments
+      .filter((attachment) => attachment.message_id === messageId)
+      .map((attachment) => ({ ...attachment }));
+  }
+
   throw new Error(`Unsupported all() query in fake DB: ${sql}`);
 }
 
@@ -172,6 +210,7 @@ function runFirstQuery<T>(
   folders: FolderRow[],
   permissions: PermissionRow[],
   messages: MessageRow[],
+  messageAttachments: MessageAttachmentRow[],
   outboundMessages: OutboundMessageRow[],
 ) {
   if (sql.includes("FROM mailboxes")) {
@@ -206,6 +245,15 @@ function runFirstQuery<T>(
     return (message ?? null) as T | null;
   }
 
+  if (sql.includes("FROM message_attachments")) {
+    const [attachmentId, messageId] = params;
+    const attachment = messageAttachments.find(
+      (row) => row.id === attachmentId && row.message_id === messageId,
+    );
+
+    return (attachment ?? null) as T | null;
+  }
+
   if (sql.includes("FROM outbound_messages")) {
     const [messageId, userId] = params;
     const allowedMailboxIds = getAllowedMailboxIds(String(userId), permissions);
@@ -228,6 +276,7 @@ function runMutation(
   params: unknown[],
   permissions: PermissionRow[],
   messages: MessageRow[],
+  messageAttachments: MessageAttachmentRow[],
 ) {
   if (sql.includes("UPDATE messages") && sql.includes("SET is_read = 1")) {
     const [messageId] = params;
@@ -263,6 +312,38 @@ function runMutation(
     }
 
     return { success: true, meta: { changes: 0 } };
+  }
+
+  if (sql.includes("DELETE FROM messages")) {
+    const [messageId] = params;
+    const index = messages.findIndex((row) => row.id === messageId && row.deleted_at == null);
+
+    if (index !== -1) {
+      messages.splice(index, 1);
+      for (let attachmentIndex = messageAttachments.length - 1; attachmentIndex >= 0; attachmentIndex -= 1) {
+        if (messageAttachments[attachmentIndex]?.message_id === messageId) {
+          messageAttachments.splice(attachmentIndex, 1);
+        }
+      }
+      return { success: true, meta: { changes: 1 } };
+    }
+
+    return { success: true, meta: { changes: 0 } };
+  }
+
+  if (sql.includes("DELETE FROM message_attachments")) {
+    const [messageId] = params;
+    for (let attachmentIndex = messageAttachments.length - 1; attachmentIndex >= 0; attachmentIndex -= 1) {
+      if (messageAttachments[attachmentIndex]?.message_id === messageId) {
+        messageAttachments.splice(attachmentIndex, 1);
+      }
+    }
+
+    return { success: true, meta: { changes: 1 } };
+  }
+
+  if (sql.includes("DELETE FROM audit_logs")) {
+    return { success: true, meta: { changes: 1 } };
   }
 
   throw new Error(`Unsupported run() query in fake DB: ${sql}`);

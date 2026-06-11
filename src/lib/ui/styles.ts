@@ -139,6 +139,78 @@ export const inboxPageStyles = String.raw`
         resize: vertical;
       }
 
+      .compact-form {
+        display: grid;
+        gap: 10px;
+      }
+
+      .compact-form .field {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 0;
+      }
+
+      .compact-form .field-multiline {
+        align-items: flex-start;
+      }
+
+      .compact-form .field label {
+        width: 84px;
+        flex: 0 0 84px;
+        padding-top: 9px;
+        color: var(--text-soft);
+        white-space: nowrap;
+      }
+
+      .compact-form .field-multiline label {
+        padding-top: 11px;
+      }
+
+      .compact-form .field-control {
+        flex: 1;
+        min-width: 0;
+        display: grid;
+        gap: 8px;
+      }
+
+      .compact-form-field {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 0;
+      }
+
+      .compact-form-field label {
+        width: 84px;
+        flex: 0 0 84px;
+        color: var(--text-soft);
+        white-space: nowrap;
+      }
+
+      .compact-form-field .field-control {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .compact-form-field input:not([type="checkbox"]):not([type="radio"]),
+      .compact-form-field textarea,
+      .compact-form-field select {
+        border-radius: 10px;
+        padding: 9px 11px;
+      }
+
+      .compact-form input:not([type="checkbox"]):not([type="radio"]),
+      .compact-form textarea,
+      .compact-form select {
+        border-radius: 10px;
+        padding: 9px 11px;
+      }
+
+      .compact-form textarea {
+        min-height: 88px;
+      }
+
       .status {
         min-height: 20px;
         margin: 0;
@@ -884,12 +956,12 @@ export const inboxPageStyles = String.raw`
         background: white;
         border: 1px solid var(--line);
         border-radius: 16px;
-        padding: 14px;
+        padding: 12px;
         box-shadow: 0 10px 24px rgba(25, 39, 61, 0.05);
       }
 
       .reply-box h3 {
-        margin: 0 0 10px;
+        margin: 0 0 8px;
         font-size: 14px;
       }
 
@@ -897,11 +969,12 @@ export const inboxPageStyles = String.raw`
         display: flex;
         justify-content: flex-end;
         gap: 10px;
+        margin-top: 4px;
       }
 
       .attachment-list {
         display: grid;
-        gap: 8px;
+        gap: 6px;
       }
 
       .attachment-list.empty {
@@ -913,7 +986,7 @@ export const inboxPageStyles = String.raw`
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        padding: 10px 12px;
+        padding: 8px 10px;
         border: 1px solid var(--line);
         border-radius: 12px;
         background: var(--panel-soft);
@@ -971,7 +1044,7 @@ export const inboxPageStyles = String.raw`
         overflow: auto;
         padding: 18px;
         display: grid;
-        gap: 16px;
+        gap: 12px;
       }
 
       .modal-section {
@@ -1234,8 +1307,8 @@ export const inboxPageStyles = String.raw`
       .compose-from-row select {
         width: 100%;
         border: 1px solid var(--line-strong);
-        border-radius: 12px;
-        padding: 12px 14px;
+        border-radius: 10px;
+        padding: 9px 11px;
         background: white;
         color: var(--text);
       }
