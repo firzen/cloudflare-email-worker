@@ -46,7 +46,7 @@ The Worker expects these bindings:
 
 ## Current Limits
 
-- Mailbox visibility is enforced, and there is now a minimal admin permission panel, but there is no broader user-management workflow yet
+- Mailbox visibility is enforced, and admins can now create, edit, disable, and permission users from settings, but there is still no invite flow, password reset flow, or self-service profile management
 - Admin settings now include a Cloudflare sync action that checks all active full zones, repairs Worker catch-all routing, ensures email sending exists, and syncs catch-all mailbox rows into D1
 - `move` now checks that the folder exists, but folders are still global rather than per-user
 - Reply uses the original recipient address, supports editable subjects and file attachments, and records outbound/audit metadata, but advanced retry handling is not implemented
@@ -69,5 +69,11 @@ The Worker expects these bindings:
 - `POST /api/messages/:id/reply`
 - `GET /api/audit-logs`
 - `GET /api/users`
+- `POST /api/users`
+- `GET /api/users/:id`
+- `PUT /api/users/:id`
+- `DELETE /api/users/:id`
+- `GET /api/users/:id/permissions`
+- `PUT /api/users/:id/permissions`
 - `GET /api/mailboxes/:id/permissions`
 - `PUT /api/mailboxes/:id/permissions`
