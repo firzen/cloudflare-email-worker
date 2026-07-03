@@ -71,6 +71,12 @@ export const inboxPageSettingsScript = String.raw`
         }).join("");
       }
 
+      function resetPasswordForm() {
+        els.currentPasswordInput.value = "";
+        els.newPasswordInput.value = "";
+        els.confirmPasswordInput.value = "";
+      }
+
       function renderAuditList() {
         if (!state.auditLogs.length) {
           els.auditList.innerHTML = '<div class="info-row"><div><strong>No audit entries yet</strong><span>Activity will appear here once operators start working mail.</span></div></div>';
@@ -368,6 +374,29 @@ export const inboxPageSettingsScript = String.raw`
         renderPermissionsPanel();
       });
 
+      els.changePasswordButton.addEventListener("click", async () => {
+        try {
+          setStatus(els.passwordStatus, "Updating password...");
+          setButtonLoading(els.changePasswordButton, true, "Updating...");
+          await api("/api/auth/password", {
+            method: "POST",
+            body: JSON.stringify({
+              currentPassword: els.currentPasswordInput.value,
+              newPassword: els.newPasswordInput.value,
+              confirmPassword: els.confirmPasswordInput.value,
+            }),
+          });
+          resetPasswordForm();
+          setStatus(els.passwordStatus, "Password updated.", "success");
+          showToast("Password updated.", "success");
+        } catch (error) {
+          setStatus(els.passwordStatus, error.message, "error");
+          showToast(error.message, "error");
+        } finally {
+          setButtonLoading(els.changePasswordButton, false, "Updating...");
+        }
+      });
+
       els.savePermissionsButton.addEventListener("click", async () => {
         const user = state.editingUser;
         if (!user) return;
@@ -485,7 +514,6 @@ export const inboxPageSettingsScript = String.raw`
           setButtonLoading(els.runCloudflareSyncButton, true, "Checking...");
           const result = await api("/api/users/cloudflare-sync", {
             method: "POST",
-            body: JSON.stringify({}),
           });
           renderCloudflareSyncResults(result);
           await loadWorkspace();

@@ -575,7 +575,26 @@ usersRouter.post("/cloudflare-sync", async (c) => {
   }
 
   try {
+    const startedAt = Date.now();
+    console.log(
+      "[cloudflare-sync] http_request_start",
+      JSON.stringify({
+        userId: adminCheck.userId,
+        path: new URL(c.req.url).pathname,
+      }),
+    );
     const result = await runCloudflareAdminSync(c.env, adminCheck.userId);
+    console.log(
+      "[cloudflare-sync] http_request_finish",
+      JSON.stringify({
+        userId: adminCheck.userId,
+        path: new URL(c.req.url).pathname,
+        durationMs: Date.now() - startedAt,
+        totalDomains: result.totalDomains,
+        succeededDomains: result.succeededDomains,
+        failedDomains: result.failedDomains,
+      }),
+    );
     return c.json(result);
   } catch (error) {
     reportUsersException(c, error, "cloudflare_sync.start");

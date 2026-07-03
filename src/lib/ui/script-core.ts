@@ -58,6 +58,11 @@ export const inboxPageCoreScript = String.raw`
         settingsTabs: document.getElementById("settings-tabs"),
         logoutButton: document.getElementById("logout-button"),
         mailboxSummary: document.getElementById("mailbox-summary"),
+        currentPasswordInput: document.getElementById("current-password-input"),
+        newPasswordInput: document.getElementById("new-password-input"),
+        confirmPasswordInput: document.getElementById("confirm-password-input"),
+        changePasswordButton: document.getElementById("change-password-button"),
+        passwordStatus: document.getElementById("password-status"),
         auditList: document.getElementById("audit-list"),
         permissionsSection: document.getElementById("permissions-section"),
         employeesSection: document.getElementById("employees-section"),
@@ -163,14 +168,40 @@ export const inboxPageCoreScript = String.raw`
 
       async function api(path, options = {}) {
         const headers = { ...(options.headers || {}) };
-        if (!(options.body instanceof FormData) && !headers["content-type"]) {
+        if (options.body != null && !(options.body instanceof FormData) && !headers["content-type"]) {
           headers["content-type"] = "application/json";
         }
 
-        const res = await fetch(path, {
-          headers,
-          ...options,
-        });
+        let res;
+        try {
+          res = await fetch(path, {
+            credentials: "same-origin",
+            cache: "no-store",
+            headers,
+            ...options,
+          });
+        } catch (error) {
+          const shouldRetry =
+            options.method === "POST" &&
+            !options.body &&
+            error instanceof TypeError;
+
+          if (shouldRetry) {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            res = await fetch(path, {
+              credentials: "same-origin",
+              cache: "no-store",
+              headers,
+              ...options,
+            });
+          } else {
+            throw new Error(
+              error instanceof Error
+                ? "Network request failed: " + error.message
+                : "Network request failed.",
+            );
+          }
+        }
 
         const contentType = res.headers.get("content-type") || "";
         const data = contentType.includes("application/json") ? await res.json() : await res.text();

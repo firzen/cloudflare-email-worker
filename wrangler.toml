@@ -26,3 +26,6 @@ bucket_name = "cloudflare-email-inbox-raw-20260608"
 [[r2_buckets]]
 binding = "ATTACHMENTS"
 bucket_name = "cloudflare-email-inbox-attachments-20260608"
+
+[triggers]
+crons = ["0 * * * *"]

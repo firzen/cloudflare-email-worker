@@ -135,4 +135,92 @@ describe("auth api", () => {
     expect(await res.json()).toEqual({ ok: true });
     expect(res.headers.get("set-cookie")).toContain("Max-Age=0");
   });
+
+  it("allows an authenticated user to change their own password", async () => {
+    const cookie = await createSessionCookie("usr_1", "secret");
+    const row = {
+      id: "usr_1",
+      email: "ops@example.com",
+      name: "Ops",
+      role: "operator",
+      password_hash: await hashPassword("correct-horse"),
+    };
+    const run = vi.fn(async () => ({ success: true }));
+    const prepare = vi.fn((sql: string) => ({
+      bind: (...params: unknown[]) => ({
+        first: vi.fn(async () => {
+          if (sql.includes("WHERE id = ?") && sql.includes("status = 'active'")) {
+            expect(params).toEqual(["usr_1"]);
+            return row;
+          }
+          throw new Error(`Unexpected first() query: ${sql}`);
+        }),
+        run: vi.fn(async () => {
+          expect(
+            sql.includes("UPDATE users") || sql.includes("INSERT INTO audit_logs"),
+          ).toBe(true);
+          return run();
+        }),
+      }),
+    }));
+
+    const res = await app.request(
+      "/api/auth/password",
+      {
+        method: "POST",
+        headers: {
+          cookie: `session=${cookie}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword: "correct-horse",
+          newPassword: "new-secret-123",
+          confirmPassword: "new-secret-123",
+        }),
+      },
+      { APP_SECRET: "secret", DB: { prepare } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("rejects password change when the current password is wrong", async () => {
+    const cookie = await createSessionCookie("usr_1", "secret");
+    const row = {
+      id: "usr_1",
+      email: "ops@example.com",
+      name: "Ops",
+      role: "operator",
+      password_hash: await hashPassword("correct-horse"),
+    };
+    const first = vi.fn(async () => row);
+    const bind = vi.fn(() => ({ first }));
+    const prepare = vi.fn(() => ({ bind }));
+
+    const res = await app.request(
+      "/api/auth/password",
+      {
+        method: "POST",
+        headers: {
+          cookie: `session=${cookie}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword: "wrong-password",
+          newPassword: "new-secret-123",
+          confirmPassword: "new-secret-123",
+        }),
+      },
+      { APP_SECRET: "secret", DB: { prepare } },
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Current password is incorrect.",
+      },
+    });
+  });
 });

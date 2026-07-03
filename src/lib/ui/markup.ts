@@ -122,6 +122,34 @@ export const inboxPageMarkup = String.raw`
                   <div id="mailbox-summary"></div>
                 </div>
               </section>
+              <section class="modal-section" id="password-section">
+                <h3>Change Password</h3>
+                <p>Update your own login password without leaving the inbox.</p>
+                <div class="form-grid compact-form">
+                  <div class="field">
+                    <label for="current-password-input">Current password</label>
+                    <div class="field-control">
+                      <input id="current-password-input" type="password" autocomplete="current-password" placeholder="Current password" />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="new-password-input">New password</label>
+                    <div class="field-control">
+                      <input id="new-password-input" type="password" autocomplete="new-password" placeholder="At least 8 characters" />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="confirm-password-input">Confirm new password</label>
+                    <div class="field-control">
+                      <input id="confirm-password-input" type="password" autocomplete="new-password" placeholder="Repeat new password" />
+                    </div>
+                  </div>
+                </div>
+                <div class="modal-footer-actions">
+                  <p class="status" id="password-status"></p>
+                  <button class="secondary-button" id="change-password-button" type="button">Update password</button>
+                </div>
+              </section>
             </div>
 
             <div class="settings-panel" id="settings-panel-activity" data-settings-panel="activity" role="tabpanel">
