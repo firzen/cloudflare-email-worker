@@ -19,11 +19,12 @@ export const inboxPageSettingsScript = String.raw`
         renderEmployeeList();
         renderPermissionsPanel();
         renderCloudflareSyncPanel();
+        renderLoginBrandingPanel();
       }
 
       function availableSettingsTabs() {
         if (state.user && state.user.role === "admin") {
-          return ["workspace", "activity", "users", "sync"];
+          return ["workspace", "activity", "users", "sync", "login"];
         }
 
         return ["workspace", "activity"];
@@ -197,6 +198,17 @@ export const inboxPageSettingsScript = String.raw`
         }
 
         els.cloudflareSyncSection.style.display = "block";
+      }
+
+      function renderLoginBrandingPanel() {
+        if (!state.user || state.user.role !== "admin") {
+          els.loginBrandingSection.style.display = "none";
+          return;
+        }
+        els.loginBrandingSection.style.display = "block";
+        const login = state.loginBranding || {};
+        els.loginTitleInput.value = login.title || "";
+        els.loginDescriptionInput.value = login.description || "";
       }
 
       function renderCloudflareSyncResults(result) {
@@ -531,6 +543,28 @@ export const inboxPageSettingsScript = String.raw`
           showToast(error.message, "error");
         } finally {
           setButtonLoading(els.runCloudflareSyncButton, false, "Checking...");
+        }
+      });
+
+      els.saveLoginBrandingButton.addEventListener("click", async () => {
+        try {
+          setStatus(els.loginBrandingStatus, "Saving...");
+          setButtonLoading(els.saveLoginBrandingButton, true, "Saving...");
+          const result = await api("/api/settings/login", {
+            method: "PUT",
+            body: JSON.stringify({
+              title: els.loginTitleInput.value,
+              description: els.loginDescriptionInput.value,
+            }),
+          });
+          state.loginBranding = result.login;
+          setStatus(els.loginBrandingStatus, "Login page updated.", "success");
+          showToast("Login page updated.", "success");
+        } catch (error) {
+          setStatus(els.loginBrandingStatus, error.message, "error");
+          showToast(error.message, "error");
+        } finally {
+          setButtonLoading(els.saveLoginBrandingButton, false, "Saving...");
         }
       });
 `;

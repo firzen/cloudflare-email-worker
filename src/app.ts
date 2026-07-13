@@ -3,12 +3,14 @@ import { parseSessionCookie } from "./lib/auth";
 import { getExecutionContextOrNull, scheduleExceptionReport } from "./lib/alerts";
 import { parseCookieHeader } from "./lib/http";
 import { renderInboxPage } from "./lib/ui";
+import { getLoginBranding } from "./lib/login-branding";
 import { auditRouter } from "./routes/audit";
 import { authRoutes } from "./routes/auth";
 import { foldersRouter } from "./routes/folders";
 import { mailboxesRouter } from "./routes/mailboxes";
 import { messagesRouter } from "./routes/messages";
 import { usersRouter } from "./routes/users";
+import { settingsRouter } from "./routes/settings";
 import type { Env } from "./types/env";
 
 type AppVariables = {
@@ -45,7 +47,7 @@ app.onError((error, c) => {
   );
 });
 
-app.get("/", (c) => c.html(renderInboxPage()));
+app.get("/", async (c) => c.html(renderInboxPage(await getLoginBranding(c.env?.DB))));
 app.get("/health", (c) => c.json({ ok: true }));
 app.route("/auth", authRoutes);
 app.route("/api/auth", authRoutes);
@@ -54,3 +56,4 @@ app.route("/api/folders", foldersRouter);
 app.route("/api/mailboxes", mailboxesRouter);
 app.route("/api/messages", messagesRouter);
 app.route("/api/users", usersRouter);
+app.route("/api/settings", settingsRouter);

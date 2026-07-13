@@ -24,6 +24,7 @@ export const inboxPageCoreScript = String.raw`
         settingsTab: "workspace",
         selectedFolderId: __DEFAULT_SELECTED_FOLDER_ID__,
         composeOpen: false,
+        loginBranding: null,
       };
 
       const els = {
@@ -86,6 +87,11 @@ export const inboxPageCoreScript = String.raw`
         runCloudflareSyncButton: document.getElementById("run-cloudflare-sync-button"),
         cloudflareSyncStatus: document.getElementById("cloudflare-sync-status"),
         cloudflareSyncResults: document.getElementById("cloudflare-sync-results"),
+        loginBrandingSection: document.getElementById("login-branding-section"),
+        loginTitleInput: document.getElementById("login-title-input"),
+        loginDescriptionInput: document.getElementById("login-description-input"),
+        loginBrandingStatus: document.getElementById("login-branding-status"),
+        saveLoginBrandingButton: document.getElementById("save-login-branding-button"),
         composeButton: document.getElementById("compose-button"),
         composeModal: document.getElementById("compose-modal"),
         composeFromPrefix: document.getElementById("compose-from-prefix"),
@@ -314,8 +320,9 @@ export const inboxPageCoreScript = String.raw`
         }
 
         if (state.user && state.user.role === "admin") {
-          const users = await api("/api/users");
+          const [users, loginBranding] = await Promise.all([api("/api/users"), api("/api/settings/login")]);
           state.users = users.items;
+          state.loginBranding = loginBranding.login;
           if (!state.selectedUserId || !state.users.find((item) => item.id === state.selectedUserId)) {
             state.selectedUserId = state.users[0] ? state.users[0].id : null;
           }
@@ -325,6 +332,7 @@ export const inboxPageCoreScript = String.raw`
           state.selectedUserId = null;
           state.editingUser = null;
           state.mailboxPermissions = [];
+          state.loginBranding = null;
         }
 
         const items = visibleMessages();

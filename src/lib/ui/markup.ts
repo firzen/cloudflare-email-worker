@@ -3,8 +3,8 @@ export const inboxPageMarkup = String.raw`
     <div class="app-root" id="app-root">
       <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
       <section class="login-shell" id="login-card">
-        <h1>Cloudflare Email Inbox</h1>
-        <p>Operate multi-domain inbound mail from one shared workspace. Sign in to triage messages, move them between folders, and manage operator access from settings.</p>
+        <h1>__LOGIN_TITLE__</h1>
+        <p>__LOGIN_DESCRIPTION__</p>
         <div class="field">
           <label for="email">Email</label>
           <input id="email" type="email" autocomplete="username" />
@@ -105,6 +105,7 @@ export const inboxPageMarkup = String.raw`
               <button class="settings-tab" id="settings-tab-activity" type="button" role="tab" aria-selected="false" data-settings-tab="activity">Activity</button>
               <button class="settings-tab" id="settings-tab-users" type="button" role="tab" aria-selected="false" data-settings-tab="users">Users</button>
               <button class="settings-tab" id="settings-tab-sync" type="button" role="tab" aria-selected="false" data-settings-tab="sync">Cloudflare Sync</button>
+              <button class="settings-tab" id="settings-tab-login" type="button" role="tab" aria-selected="false" data-settings-tab="login">Login Page</button>
             </div>
 
             <div class="settings-panel active" id="settings-panel-workspace" data-settings-panel="workspace" role="tabpanel">
@@ -240,6 +241,27 @@ export const inboxPageMarkup = String.raw`
                   <button class="secondary-button" id="run-cloudflare-sync-button" type="button">Check and bind domains</button>
                 </div>
                 <div class="settings-grid" id="cloudflare-sync-results"></div>
+              </section>
+            </div>
+
+            <div class="settings-panel" id="settings-panel-login" data-settings-panel="login" role="tabpanel">
+              <section class="modal-section" id="login-branding-section">
+                <h3>Login Page</h3>
+                <p>Set the heading and introduction displayed before users sign in.</p>
+                <div class="form-grid compact-form">
+                  <div class="field">
+                    <label for="login-title-input">Title</label>
+                    <div class="field-control"><input id="login-title-input" type="text" maxlength="120" /></div>
+                  </div>
+                  <div class="field">
+                    <label for="login-description-input">Introduction</label>
+                    <div class="field-control"><textarea id="login-description-input" maxlength="500" rows="4"></textarea></div>
+                  </div>
+                </div>
+                <div class="modal-footer-actions">
+                  <p class="status" id="login-branding-status"></p>
+                  <button class="secondary-button" id="save-login-branding-button" type="button">Save login page</button>
+                </div>
               </section>
             </div>
           </div>
